@@ -31,7 +31,7 @@ This automated workflow converts issue discussions directly into code changes, d
 
 The following diagram illustrates the complete workflow of useful1:
 
-![useful1 Automated Issue Resolution Workflow](docs/workflow-diagram.png)
+![useful1 Automated Issue Resolution Workflow](docs/workflow-diagram.svg)
 
 ## Project Structure
 
