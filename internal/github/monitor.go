@@ -639,8 +639,8 @@ func (m *Monitor) createDraftPullRequest(issue *models.Issue) error {
 
 	// Check if Anthropic API key is available
 	if m.config.Anthropic.Token != "" {
-		logging.Info("Using AI to analyze issue and generate branch name", 
-			"token_available", "true", 
+		logging.Info("Using AI to analyze issue and generate branch name",
+			"token_available", "true",
 			"token_length", len(m.config.Anthropic.Token),
 			"issue_title", issue.Title,
 			"issue_body_length", len(issue.Body),
@@ -692,7 +692,7 @@ func (m *Monitor) createDraftPullRequest(issue *models.Issue) error {
 	if err != nil {
 		return fmt.Errorf("failed to create branch: %w", err)
 	}
-	
+
 	// Create implementation.txt file in the branch and a local clone
 	logging.Info("Creating implementation file for the PR", "branch", branchName)
 	err = client.CreateImplementationFile(issue.Owner, issue.Repo, branchName, issue.Number)
@@ -726,12 +726,12 @@ func (m *Monitor) createDraftPullRequest(issue *models.Issue) error {
 		logging.Info("Generating AI summary for PR description",
 			"token_available", "true",
 			"token_length", len(m.config.Anthropic.Token))
-		
+
 		analyzer := anthropic.NewAnalyzer(m.config)
 
 		// Create a transcript of the issue
 		transcript := makeIssueTranscript(issue)
-		logging.Debug("Created issue transcript for summarization", 
+		logging.Debug("Created issue transcript for summarization",
 			"transcript_length", len(transcript),
 			"issue_number", issue.Number)
 
@@ -760,12 +760,12 @@ func (m *Monitor) createDraftPullRequest(issue *models.Issue) error {
 		"base", defaultBranch)
 
 	// Create the draft PR - use the branchName we just created above
-	logging.Debug("Calling CreateDraftPullRequest with created branch", 
-		"branch", branchName, 
-		"owner", issue.Owner, 
-		"repo", issue.Repo, 
+	logging.Debug("Calling CreateDraftPullRequest with created branch",
+		"branch", branchName,
+		"owner", issue.Owner,
+		"repo", issue.Repo,
 		"title_length", len(prTitle))
-		
+
 	pr, err := client.CreateDraftPullRequest(
 		issue.Owner,
 		issue.Repo,

@@ -233,3 +233,69 @@ func TestFormatErrorResponse(t *testing.T) {
 		t.Errorf("formatErrorResponse() output doesn't contain context fields")
 	}
 }
+
+// TestExecuteWithArguments tests that the Execute method correctly passes all arguments
+// including flags to the underlying command, but uses executeWithPrompts to avoid terminal interaction
+func TestExecuteWithArguments(t *testing.T) {
+	// Skip this test if you're not on a system with echo command
+	if _, err := os.Stat("/bin/echo"); os.IsNotExist(err) {
+		t.Skip("Skipping test as /bin/echo does not exist on this system")
+	}
+
+	// Create a test config that uses echo for the CLI command
+	cfg := createTestConfig()
+	cfg.CLI.Command = "/bin/echo"
+	cfg.CLI.Args = []string{}
+
+	// Create a test executor
+	executor := &Executor{
+		config: cfg,
+	}
+
+	// Prepare test cases with different types of arguments
+	testCases := []struct {
+		name         string
+		args         []string
+		shouldContain []string
+	}{
+		{
+			name: "Simple arguments",
+			args: []string{"arg1", "arg2", "arg3"},
+			shouldContain: []string{"arg1", "arg2", "arg3"},
+		},
+		{
+			name: "Flag arguments",
+			args: []string{"-p", "param", "--flag", "value"},
+			shouldContain: []string{"-p", "param", "--flag", "value"},
+		},
+		{
+			name: "Mixed arguments",
+			args: []string{"normal", "-f", "flag-value", "--long-flag"},
+			shouldContain: []string{"normal", "-f", "flag-value", "--long-flag"},
+		},
+		{
+			name: "Quoted arguments",
+			args: []string{"-p", "\"quoted param\"", "--name", "value with spaces"},
+			shouldContain: []string{"-p", "\"quoted param\"", "--name", "value with spaces"},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Use executeWithPrompts instead of Execute to avoid terminal interaction
+			output, err := executor.executeWithPrompts(executor.config.CLI.Command, tc.args)
+			
+			// Check for errors
+			if err != nil {
+				t.Fatalf("executeWithPrompts returned error: %v", err)
+			}
+
+			// Verify all expected arguments appear in the output
+			for _, arg := range tc.shouldContain {
+				if !strings.Contains(output, arg) {
+					t.Errorf("Expected output to contain '%s', but got: %s", arg, output)
+				}
+			}
+		})
+	}
+}

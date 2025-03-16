@@ -205,6 +205,28 @@ func validateConfig(config *Config) error {
 	return nil
 }
 
+// SaveToFile saves the configuration to the specified file path
+func (c *Config) SaveToFile(filePath string) error {
+	// Create the directory if it doesn't exist
+	dir := filepath.Dir(filePath)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("failed to create directory: %w", err)
+	}
+
+	// Marshal to JSON
+	configJSON, err := json.MarshalIndent(c, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal config to JSON: %w", err)
+	}
+
+	// Write to file
+	if err := os.WriteFile(filePath, configJSON, 0600); err != nil {
+		return fmt.Errorf("failed to write config file: %w", err)
+	}
+
+	return nil
+}
+
 // Configurator helps build and save configuration
 type Configurator struct {
 	config Config

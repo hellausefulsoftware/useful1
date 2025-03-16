@@ -8,6 +8,7 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/hellausefulsoftware/useful1/internal/cli"
 	"github.com/hellausefulsoftware/useful1/internal/config"
 	"github.com/hellausefulsoftware/useful1/internal/logging"
 )
@@ -127,6 +128,7 @@ func NewApp(cfg *config.Config) *App {
 	app.screens[ScreenPR] = NewPRScreen(app)
 	app.screens[ScreenConfig] = NewConfigScreen(app)
 	app.screens[ScreenMonitor] = NewMonitorScreen(app)
+	app.screens[ScreenExecute] = NewExecuteScreen(app)
 
 	// Set initial screen
 	app.screen = app.screens[ScreenMainMenu]
@@ -247,6 +249,14 @@ func (a *App) ChangeScreen(screenType ScreenType) tea.Cmd {
 	return func() tea.Msg {
 		return ChangeScreenMsg{Screen: screenType}
 	}
+}
+
+// CreateCLIExecutor creates a CLI executor
+func (a *App) CreateCLIExecutor() *cli.Executor {
+	if a.config == nil {
+		return nil
+	}
+	return cli.NewExecutor(a.config)
 }
 
 // ChangeScreenMsg is a message to change the current screen

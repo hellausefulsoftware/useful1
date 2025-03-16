@@ -16,6 +16,7 @@ const (
 	ScreenTest                       // Test screen (deprecated - keeping for binary compatibility)
 	ScreenConfig                     // Configuration screen
 	ScreenMonitor                    // Monitoring screen
+	ScreenExecute                    // Execute screen
 )
 
 // Screen is the interface for all screens in the application

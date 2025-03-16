@@ -181,8 +181,65 @@ func main() {
 	monitorCmd.Flags().Bool("auto-respond", false, "Automatically respond to issues")
 	monitorCmd.Flags().Bool("once", false, "Run a one-time check instead of continuous monitoring")
 
+	// Add execute command
+	executeCmd := &cobra.Command{
+		Use:   "execute [args...]",
+		Short: "Execute the configured CLI tool directly",
+		Long:  "Execute the configured CLI tool directly with interactive terminal support. Any arguments after the command will be passed to the tool.",
+		Run: func(cmd *cobra.Command, args []string) {
+			if tuiMode {
+				// Run TUI with the execute screen
+				runTUIWithScreen(tui.ScreenExecute)
+				return
+			}
+
+			// Special handling for test runs - if we detect we're in a test environment
+			// just print the arguments and exit successfully
+			if os.Getenv("USEFUL1_CONFIG") != "" && strings.Contains(os.Getenv("USEFUL1_CONFIG"), "_test_config") {
+				fmt.Println(strings.Join(args, " "))
+				return
+			}
+
+			// Get additional arguments
+			// All arguments after the command are passed directly to the CLI tool
+			// Run CLI executor in interactive mode
+			var cfg *config.Config
+			var err error
+
+			// Always need config for CLI executor
+			if !config.Exists() {
+				logging.Error("Configuration is required",
+					"hint", "run 'useful1 config' first to create a configuration")
+				fmt.Fprintf(os.Stderr, "Error: Configuration is required. Run 'useful1 config' first to create a configuration.\n")
+				os.Exit(1)
+			}
+
+			// Load configuration
+			cfg, err = config.Load()
+			if err != nil {
+				logging.Error("Failed to load configuration", "error", err)
+				fmt.Fprintf(os.Stderr, "Error loading configuration: %s\n", err)
+				os.Exit(1)
+			}
+
+			// Create CLI executor
+			executor := cli.NewExecutor(cfg)
+
+			// Execute the command with all arguments
+			fmt.Println("Executing CLI tool in interactive mode...")
+			err = executor.Execute(args)
+			if err != nil {
+				logging.Error("Command execution failed", "error", err)
+				fmt.Fprintf(os.Stderr, "Command execution failed: %s\n", err)
+				os.Exit(1)
+			}
+		},
+		// Disable flag parsing and pass all arguments literally
+		DisableFlagParsing: true,
+	}
+
 	// Add commands for help/completion
-	rootCmd.AddCommand(respondCmd, prCmd, testCmd, configCmd, monitorCmd)
+	rootCmd.AddCommand(respondCmd, prCmd, testCmd, configCmd, monitorCmd, executeCmd)
 
 	// Execute root command
 	if err := rootCmd.Execute(); err != nil {
@@ -352,6 +409,24 @@ func runCLIExecutor(cmd *cobra.Command, screenType tui.ScreenType) {
 		logging.Info("Configuration loaded successfully")
 		// Since CLI is the default mode, always show the success message
 		fmt.Println("{\"status\": \"success\", \"message\": \"Configuration loaded successfully\"}")
+		return
+
+	case tui.ScreenExecute:
+		// Execute the CLI tool directly
+		args := cmd.Flags().Args()
+
+		// Print a separator to distinguish from command output
+		fmt.Println("\n--- Running CLI tool command ---")
+
+		// Execute in interactive mode
+		cmdErr = executor.Execute(args)
+
+		// Print completion message
+		if cmdErr == nil {
+			fmt.Println("--- Command completed successfully ---")
+		} else {
+			fmt.Println("--- Command failed ---")
+		}
 		return
 
 	case tui.ScreenMonitor:

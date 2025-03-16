@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/hellausefulsoftware/useful1/internal/config"
@@ -479,4 +480,80 @@ func (e *Executor) checkCriteria(output string, criteria []string) bool {
 		}
 	}
 	return true
+}
+
+// Execute runs the configured CLI tool directly with interactive input/output
+func (e *Executor) Execute(args []string) error {
+	logging.Info("Executing CLI tool", "command", e.config.CLI.Command, "args", args)
+
+	// Parse the command string to handle commands with arguments
+	cmdParts := strings.Fields(e.config.CLI.Command)
+	var command *exec.Cmd
+
+	if len(cmdParts) > 1 {
+		// Command has built-in arguments
+		command = exec.Command(cmdParts[0], append(cmdParts[1:], args...)...)
+	} else {
+		// Command is a single word
+		command = exec.Command(e.config.CLI.Command, args...)
+	}
+
+	// Connect command's stdin, stdout, and stderr directly to the user's
+	command.Stdin = os.Stdin
+	command.Stdout = os.Stdout
+	command.Stderr = os.Stderr
+
+	// Set process group to allow proper terminal handling
+	command.SysProcAttr = &syscall.SysProcAttr{
+		Setpgid: true,
+	}
+
+	// Run the command in interactive mode
+	logging.Info("Starting interactive command",
+		"command", e.config.CLI.Command,
+		"args", args)
+
+	err := command.Run()
+	if err != nil {
+		logging.Error("Command execution failed", "error", err)
+		return fmt.Errorf("command execution failed: %w", err)
+	}
+
+	logging.Info("Command completed successfully")
+	return nil
+}
+
+// ExecuteWithOutput runs the CLI tool and returns the output for display in TUI
+func (e *Executor) ExecuteWithOutput(args []string) (string, error) {
+	logging.Info("Executing CLI tool with output capture", "command", e.config.CLI.Command, "args", args)
+
+	// Parse the command string to handle commands with arguments
+	cmdParts := strings.Fields(e.config.CLI.Command)
+	var command *exec.Cmd
+
+	if len(cmdParts) > 1 {
+		// Command has built-in arguments
+		command = exec.Command(cmdParts[0], append(cmdParts[1:], args...)...)
+	} else {
+		// Command is a single word
+		command = exec.Command(e.config.CLI.Command, args...)
+	}
+
+	// Capture both stdout and stderr in the output
+	stdout, err := command.Output()
+	if err != nil {
+		// Try to get stderr output
+		var errorOutput string
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			errorOutput = string(exitErr.Stderr)
+		}
+
+		// Return both the error and any stderr content
+		if errorOutput != "" {
+			return fmt.Sprintf("ERROR: %s\n\nCommand stderr output:\n%s", err.Error(), errorOutput), err
+		}
+		return fmt.Sprintf("ERROR: %s", err.Error()), err
+	}
+
+	return string(stdout), nil
 }

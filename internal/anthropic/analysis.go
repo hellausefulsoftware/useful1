@@ -70,7 +70,7 @@ func NewAnalyzer(cfg *config.Config) *IssueAnalyzer {
 
 	// Validate token format (basic check)
 	if !strings.HasPrefix(token, "sk-ant-") {
-		logging.Warn("Anthropic token appears to be in incorrect format", 
+		logging.Warn("Anthropic token appears to be in incorrect format",
 			"format_valid", strings.HasPrefix(token, "sk-ant-"))
 	}
 
@@ -89,7 +89,7 @@ func (a *IssueAnalyzer) SummarizeIssue(transcript string) (string, error) {
 func (a *IssueAnalyzer) AnalyzeIssue(issue *models.Issue) (string, error) {
 	// 1. Compile issue transcript
 	transcript := formatIssueTranscript(issue)
-	logging.Debug("Created initial issue transcript", 
+	logging.Debug("Created initial issue transcript",
 		"length", len(transcript),
 		"issue_number", issue.Number,
 		"issue_title", issue.Title,
@@ -182,7 +182,7 @@ Provide a concise summary of the issue in 1-3 short paragraphs, focusing only on
 	logging.Debug("Sending issue summary request to Anthropic API", "model", SummaryModel)
 
 	// Debug the request
-	logging.Debug("Anthropic API request details for summarization", 
+	logging.Debug("Anthropic API request details for summarization",
 		"model", SummaryModel,
 		"max_tokens", 500,
 		"prompt_length", len(prompt))
@@ -199,7 +199,7 @@ Provide a concise summary of the issue in 1-3 short paragraphs, focusing only on
 	})
 
 	if err != nil {
-		logging.Error("Anthropic API error", 
+		logging.Error("Anthropic API error",
 			"error", err.Error(),
 			"error_type", fmt.Sprintf("%T", err))
 		return "", fmt.Errorf("failed to summarize issue: %w", err)
@@ -217,7 +217,7 @@ Provide a concise summary of the issue in 1-3 short paragraphs, focusing only on
 			responseText += content.Text
 		}
 	}
-	
+
 	logging.Info("Successfully received response from Anthropic API",
 		"response_length", len(responseText),
 		"content_items", len(message.Content))
@@ -244,7 +244,7 @@ Respond with only one word: "bug", "feature", or "chore".`
 	logging.Debug("Sending issue classification request to Anthropic API", "model", ClassifierModel)
 
 	// Debug the request
-	logging.Debug("Anthropic API request details for classification", 
+	logging.Debug("Anthropic API request details for classification",
 		"model", ClassifierModel,
 		"max_tokens", 10,
 		"prompt_length", len(prompt),
@@ -262,12 +262,12 @@ Respond with only one word: "bug", "feature", or "chore".`
 	})
 
 	if err != nil {
-		logging.Error("Failed to classify issue", 
+		logging.Error("Failed to classify issue",
 			"error", err.Error(),
 			"error_type", fmt.Sprintf("%T", err))
 		return TypeBug, fmt.Errorf("failed to classify issue: %w", err)
 	}
-	
+
 	logging.Info("Successfully received classification from Anthropic API",
 		"content_items", len(message.Content))
 
@@ -315,7 +315,7 @@ Give only the branch name, e.g., "fix-header-overflow" or "add-user-permissions"
 	logging.Debug("Sending branch name generation request to Anthropic API", "model", ClassifierModel)
 
 	// Debug the request
-	logging.Debug("Anthropic API request details for branch name generation", 
+	logging.Debug("Anthropic API request details for branch name generation",
 		"model", ClassifierModel,
 		"max_tokens", 20,
 		"prompt_length", len(prompt),
@@ -333,12 +333,12 @@ Give only the branch name, e.g., "fix-header-overflow" or "add-user-permissions"
 	})
 
 	if err != nil {
-		logging.Error("Failed to generate branch name", 
+		logging.Error("Failed to generate branch name",
 			"error", err.Error(),
 			"error_type", fmt.Sprintf("%T", err))
 		return defaultBranchName(issue), fmt.Errorf("failed to generate branch name: %w", err)
 	}
-	
+
 	logging.Info("Successfully received branch name from Anthropic API",
 		"content_items", len(message.Content))
 

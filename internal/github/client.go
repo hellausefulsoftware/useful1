@@ -78,14 +78,14 @@ func (c *Client) CreatePullRequest(owner, repo, title, body, head, base string) 
 // CreateDraftPullRequest creates a new draft pull request
 func (c *Client) CreateDraftPullRequest(owner, repo, title, body, head, base string) (*github.PullRequest, error) {
 	// Check if branch name is empty - if so, we need to generate it
-	logging.Debug("CreateDraftPullRequest called with parameters", 
+	logging.Debug("CreateDraftPullRequest called with parameters",
 		"owner", owner,
 		"repo", repo,
 		"title", title,
 		"head_branch", head,
 		"base_branch", base,
 		"body_length", len(body))
-		
+
 	if head == "" {
 		logging.Info("Empty branch name provided, creating issue structure for Anthropic API",
 			"owner", owner,
@@ -103,7 +103,7 @@ func (c *Client) CreateDraftPullRequest(owner, repo, title, body, head, base str
 				}
 			}
 		}
-		
+
 		// Create a temporary issue object to pass to the Anthropic analyzer
 		issueObj := &models.Issue{
 			Owner:  owner,
@@ -112,7 +112,7 @@ func (c *Client) CreateDraftPullRequest(owner, repo, title, body, head, base str
 			Title:  title,
 			Body:   body,
 		}
-		
+
 		// Access config to get Anthropic API key
 		// Note: Ideally we should pass the config from monitor.go, but we'll load it here
 		var branchName string
@@ -133,7 +133,7 @@ func (c *Client) CreateDraftPullRequest(owner, repo, title, body, head, base str
 			logging.Info("Created Anthropic analyzer",
 				"token_available", cfg.Anthropic.Token != "",
 				"token_length", len(cfg.Anthropic.Token))
-				
+
 			// Generate the branch name using Anthropic analyzer
 			// This will use the proper classification-based branch prefixes (bugfix/, feature/, chore/)
 			aiGeneratedBranch, aiErr := analyzer.AnalyzeIssue(issueObj)
@@ -152,29 +152,29 @@ func (c *Client) CreateDraftPullRequest(owner, repo, title, body, head, base str
 				logging.Info("Using AI-generated branch name", "branch", branchName)
 			}
 		}
-		
+
 		// Set the head to the generated branch name and add Draft prefix to title
 		title = "Draft: " + title
 		head = branchName // CRITICAL BUG FIX: Set head to the generated branch name
-		
+
 		logging.Debug("Set head branch to generated branch name", "head", head)
 		logging.Info("Generated branch and title for draft PR",
 			"branch", head,
 			"title", title)
-			
+
 		// Create the branch using our CreateBranch method
-		logging.Info("Creating new branch for draft PR", 
-			"branch", head, 
+		logging.Info("Creating new branch for draft PR",
+			"branch", head,
 			"base", base)
-			
+
 		if err := c.CreateBranch(owner, repo, head, base); err != nil {
-			logging.Error("Failed to create branch for draft PR", 
-				"branch", head, 
+			logging.Error("Failed to create branch for draft PR",
+				"branch", head,
 				"error", err)
 			return nil, fmt.Errorf("failed to create branch for draft PR: %w", err)
 		}
-		
-		logging.Info("Successfully created branch for draft PR", 
+
+		logging.Info("Successfully created branch for draft PR",
 			"branch", head,
 			"owner", owner,
 			"repo", repo)
@@ -199,13 +199,13 @@ func (c *Client) CreateDraftPullRequest(owner, repo, title, body, head, base str
 		"base", base,
 		"draft", true)
 
-	logging.Debug("Making GitHub API call to create PR", 
-		"owner", owner, 
-		"repo", repo, 
-		"head", *newPR.Head, 
-		"base", *newPR.Base, 
+	logging.Debug("Making GitHub API call to create PR",
+		"owner", owner,
+		"repo", repo,
+		"head", *newPR.Head,
+		"base", *newPR.Base,
 		"draft", *newPR.Draft)
-		
+
 	pr, resp, err := c.client.PullRequests.Create(
 		context.Background(),
 		owner,
@@ -398,7 +398,7 @@ func (c *Client) CreateBranch(owner, repo, branchName, baseBranch string) error 
 	if err != nil {
 		return fmt.Errorf("failed to create branch: %w", err)
 	}
-	
+
 	logging.Info("Successfully created branch", "branch", branchName)
 	return nil
 }
@@ -410,33 +410,33 @@ func (c *Client) CreateImplementationFile(owner, repo, branchName string, issueN
 	if err != nil {
 		return fmt.Errorf("failed to get user's home directory: %w", err)
 	}
-	
+
 	// Create temp directory path
 	tempDir := fmt.Sprintf("%s/.useful1/temp/%s_%d", homeDir, repo, issueNumber)
-	
+
 	// Create the temp directory if it doesn't exist
 	err = os.MkdirAll(tempDir, 0755)
 	if err != nil {
 		return fmt.Errorf("failed to create temp directory: %w", err)
 	}
-	
-	logging.Info("Creating implementation file in local clone", 
+
+	logging.Info("Creating implementation file in local clone",
 		"owner", owner,
 		"repo", repo,
 		"branch", branchName,
 		"issue", issueNumber,
 		"dir", tempDir)
-	
+
 	// Create implementation.txt file with "WIP" content
 	implementationPath := fmt.Sprintf("%s/implementation.txt", tempDir)
 	err = os.WriteFile(implementationPath, []byte("WIP"), 0644)
 	if err != nil {
 		return fmt.Errorf("failed to create implementation.txt: %w", err)
 	}
-	
+
 	// Create a commit with the new file
 	commitMessage := "Add initial implementation file"
-	
+
 	// Create the file in the GitHub repo
 	_, _, err = c.client.Repositories.CreateFile(
 		context.Background(),
@@ -449,18 +449,18 @@ func (c *Client) CreateImplementationFile(owner, repo, branchName string, issueN
 			Branch:  &branchName,
 		},
 	)
-	
+
 	if err != nil {
 		logging.Warn("Failed to create implementation.txt in repository",
 			"branch", branchName,
 			"error", err)
 		return fmt.Errorf("failed to create implementation file: %w", err)
 	}
-	
-	logging.Info("Created implementation file and committed to branch", 
-		"branch", branchName, 
+
+	logging.Info("Created implementation file and committed to branch",
+		"branch", branchName,
 		"local_path", implementationPath)
-	
+
 	return nil
 }
 
@@ -577,78 +577,78 @@ func (c *Client) generateBranchAndTitle(owner, repo, title, body string) (string
 			}
 		}
 	}
-    
-    // 2. Analyze title and body to determine issue type
-    // Look for clues in the text to classify as bug, feature, or chore
-    issueType := "feature" // Default to feature
-    
-    lowerTitle := strings.ToLower(title)
-    lowerBody := strings.ToLower(body)
-    
-    // Simple classification based on keywords
-    if strings.Contains(lowerTitle, "bug") || 
-       strings.Contains(lowerTitle, "fix") || 
-       strings.Contains(lowerTitle, "issue") || 
-       strings.Contains(lowerTitle, "problem") ||
-       strings.Contains(lowerBody, "bug") || 
-       strings.Contains(lowerBody, "fix") || 
-       strings.Contains(lowerBody, "doesn't work") ||
-       strings.Contains(lowerBody, "broken") {
-        issueType = "bugfix"
-    } else if strings.Contains(lowerTitle, "refactor") || 
-              strings.Contains(lowerTitle, "clean") || 
-              strings.Contains(lowerTitle, "doc") ||
-              strings.Contains(lowerBody, "refactor") || 
-              strings.Contains(lowerBody, "clean") || 
-              strings.Contains(lowerBody, "document") {
-        issueType = "chore"
-    }
-    
-    logging.Info("Determined issue type", "type", issueType)
-    
+
+	// 2. Analyze title and body to determine issue type
+	// Look for clues in the text to classify as bug, feature, or chore
+	issueType := "feature" // Default to feature
+
+	lowerTitle := strings.ToLower(title)
+	lowerBody := strings.ToLower(body)
+
+	// Simple classification based on keywords
+	if strings.Contains(lowerTitle, "bug") ||
+		strings.Contains(lowerTitle, "fix") ||
+		strings.Contains(lowerTitle, "issue") ||
+		strings.Contains(lowerTitle, "problem") ||
+		strings.Contains(lowerBody, "bug") ||
+		strings.Contains(lowerBody, "fix") ||
+		strings.Contains(lowerBody, "doesn't work") ||
+		strings.Contains(lowerBody, "broken") {
+		issueType = "bugfix"
+	} else if strings.Contains(lowerTitle, "refactor") ||
+		strings.Contains(lowerTitle, "clean") ||
+		strings.Contains(lowerTitle, "doc") ||
+		strings.Contains(lowerBody, "refactor") ||
+		strings.Contains(lowerBody, "clean") ||
+		strings.Contains(lowerBody, "document") {
+		issueType = "chore"
+	}
+
+	logging.Info("Determined issue type", "type", issueType)
+
 	// 3. Extract meaningful keywords from title
 	words := strings.Fields(title)
 	var keywords []string
-	
+
 	// Skip common words, articles, etc. to extract more meaningful terms
 	skipWords := map[string]bool{
-	    "a": true, "an": true, "the": true, "and": true, 
-	    "is": true, "in": true, "to": true, "for": true, 
-	    "with": true, "of": true, "on": true, "draft": true,
-	    "fix": true, "issue": true, "bug": true, "pr": true,
-	    "pull": true, "request": true, "#": true,
+		"a": true, "an": true, "the": true, "and": true,
+		"is": true, "in": true, "to": true, "for": true,
+		"with": true, "of": true, "on": true, "draft": true,
+		"fix": true, "issue": true, "bug": true, "pr": true,
+		"pull": true, "request": true, "#": true,
 	}
-	
+
 	// Get up to 3-5 meaningful words
 	for _, word := range words {
-	    w := strings.ToLower(word)
-	    if !skipWords[w] && len(keywords) < 5 {
-	        // Remove special characters
-	        w = sanitizeBranchName(w)
-	        if w != "" && len(w) > 2 {  // Skip very short words
-	            keywords = append(keywords, w)
-	        }
-	    }
+		w := strings.ToLower(word)
+		if !skipWords[w] && len(keywords) < 5 {
+			// Remove special characters
+			w = sanitizeBranchName(w)
+			if w != "" && len(w) > 2 { // Skip very short words
+				keywords = append(keywords, w)
+			}
+		}
 	}
-	
+
 	// If we couldn't extract good keywords, use a more generic approach
 	if len(keywords) < 2 {
-	    simplifiedTitle := sanitizeBranchName(title)
-	    keywords = strings.Split(simplifiedTitle, "-")
-	    // Limit to 3-5 meaningful segments
-	    if len(keywords) > 5 {
-	        keywords = keywords[:5]
-	    }
+		simplifiedTitle := sanitizeBranchName(title)
+		keywords = strings.Split(simplifiedTitle, "-")
+		// Limit to 3-5 meaningful segments
+		if len(keywords) > 5 {
+			keywords = keywords[:5]
+		}
 	}
-	
+
 	// 4. Create a descriptive branch name
 	var descriptivePart string
 	if len(keywords) > 0 {
-        descriptivePart = strings.Join(keywords, "-")
-    } else {
-        descriptivePart = "update"
-    }
-	
+		descriptivePart = strings.Join(keywords, "-")
+	} else {
+		descriptivePart = "update"
+	}
+
 	// 5. Generate the final branch name with proper prefix
 	var branchName string
 	if issueNum > 0 {
@@ -659,28 +659,28 @@ func (c *Client) generateBranchAndTitle(owner, repo, title, body string) (string
 		timestamp := time.Now().Format("20060102")
 		branchName = fmt.Sprintf("%s/%s-%s", issueType, timestamp, descriptivePart)
 	}
-	
+
 	// 6. Create an appropriate PR title
 	prTitle := title
-	
+
 	// Add type prefix to title if not already present
-	if !strings.HasPrefix(strings.ToLower(title), "fix:") && 
-	   !strings.HasPrefix(strings.ToLower(title), "feature:") && 
-	   !strings.HasPrefix(strings.ToLower(title), "chore:") {
-	    switch issueType {
-	    case "bugfix":
-	        prTitle = "Fix: " + title
-	    case "feature":
-	        prTitle = "Feature: " + title
-	    case "chore":
-	        prTitle = "Chore: " + title
-	    }
+	if !strings.HasPrefix(strings.ToLower(title), "fix:") &&
+		!strings.HasPrefix(strings.ToLower(title), "feature:") &&
+		!strings.HasPrefix(strings.ToLower(title), "chore:") {
+		switch issueType {
+		case "bugfix":
+			prTitle = "Fix: " + title
+		case "feature":
+			prTitle = "Feature: " + title
+		case "chore":
+			prTitle = "Chore: " + title
+		}
 	}
-	
-	logging.Info("Generated branch name with intelligent classification", 
-	    "branch", branchName, 
-	    "type", issueType,
-	    "keywords", strings.Join(keywords, ", "))
+
+	logging.Info("Generated branch name with intelligent classification",
+		"branch", branchName,
+		"type", issueType,
+		"keywords", strings.Join(keywords, ", "))
 	logging.Info("Generated PR title", "title", prTitle)
 
 	return branchName, prTitle, nil
