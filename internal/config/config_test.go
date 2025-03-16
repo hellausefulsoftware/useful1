@@ -133,7 +133,7 @@ func TestConfigurator(t *testing.T) {
 	configurator.SetGitHubUser("test-user")
 	configurator.SetAnthropicToken("test-anthropic-token")
 	configurator.SetCLIToolPath("/bin/echo")
-	
+
 	budgets := map[string]float64{
 		"issue_response": 0.5,
 		"pr_creation":    1.0,
@@ -145,39 +145,39 @@ func TestConfigurator(t *testing.T) {
 
 	// Verify values are set correctly in the configurator
 	if configurator.config.GitHub.Token != "test-github-token" {
-		t.Errorf("GitHub token not set correctly, got %s, want %s", 
+		t.Errorf("GitHub token not set correctly, got %s, want %s",
 			configurator.config.GitHub.Token, "test-github-token")
 	}
-	
+
 	if configurator.config.GitHub.User != "test-user" {
-		t.Errorf("GitHub user not set correctly, got %s, want %s", 
+		t.Errorf("GitHub user not set correctly, got %s, want %s",
 			configurator.config.GitHub.User, "test-user")
 	}
-	
+
 	if configurator.config.Anthropic.Token != "test-anthropic-token" {
-		t.Errorf("Anthropic token not set correctly, got %s, want %s", 
+		t.Errorf("Anthropic token not set correctly, got %s, want %s",
 			configurator.config.Anthropic.Token, "test-anthropic-token")
 	}
-	
+
 	if configurator.config.CLI.Command != "/bin/echo" {
-		t.Errorf("CLI command not set correctly, got %s, want %s", 
+		t.Errorf("CLI command not set correctly, got %s, want %s",
 			configurator.config.CLI.Command, "/bin/echo")
 	}
-	
+
 	// Test that monitoring settings were set
 	if configurator.config.Monitor.PollInterval != 5 {
-		t.Errorf("Poll interval not set correctly, got %d, want %d", 
+		t.Errorf("Poll interval not set correctly, got %d, want %d",
 			configurator.config.Monitor.PollInterval, 5)
 	}
-	
+
 	if !configurator.config.Monitor.CheckMentions {
 		t.Errorf("Check mentions not set correctly, expected true")
 	}
-	
-	if len(configurator.config.Monitor.RepoFilter) != 2 || 
-	   configurator.config.Monitor.RepoFilter[0] != "repo1" ||
-	   configurator.config.Monitor.RepoFilter[1] != "repo2" {
-		t.Errorf("Repo filter not set correctly, got %v, want %v", 
+
+	if len(configurator.config.Monitor.RepoFilter) != 2 ||
+		configurator.config.Monitor.RepoFilter[0] != "repo1" ||
+		configurator.config.Monitor.RepoFilter[1] != "repo2" {
+		t.Errorf("Repo filter not set correctly, got %v, want %v",
 			configurator.config.Monitor.RepoFilter, []string{"repo1", "repo2"})
 	}
 }

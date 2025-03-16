@@ -84,12 +84,12 @@ func NewApp(cfg *config.Config) *App {
 	theme := NewTheme()
 	keyMap := DefaultKeyMap()
 	helpModel := help.New()
-	helpModel.Styles.ShortKey = theme.Bold.Copy()
-	helpModel.Styles.ShortDesc = theme.Text.Copy()
-	helpModel.Styles.ShortSeparator = theme.Faint.Copy()
-	helpModel.Styles.FullKey = theme.Bold.Copy()
-	helpModel.Styles.FullDesc = theme.Text.Copy()
-	helpModel.Styles.FullSeparator = theme.Faint.Copy()
+	helpModel.Styles.ShortKey = theme.Bold
+	helpModel.Styles.ShortDesc = theme.Text
+	helpModel.Styles.ShortSeparator = theme.Faint
+	helpModel.Styles.FullKey = theme.Bold
+	helpModel.Styles.FullDesc = theme.Text
+	helpModel.Styles.FullSeparator = theme.Faint
 
 	app := &App{
 		config:   cfg,
@@ -102,7 +102,7 @@ func NewApp(cfg *config.Config) *App {
 
 	// Initialize screens
 	app.screens[ScreenMainMenu] = NewMainMenuScreen(app)
-	
+
 	// Only initialize screens that need config if config exists
 	app.screens[ScreenRespond] = NewRespondScreen(app)
 	app.screens[ScreenPR] = NewPRScreen(app)
@@ -155,7 +155,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.screen = screen
 			return a, screen.Init()
 		}
-		
+
 	case ConfigMissingMsg:
 		// If config is missing, switch to main menu or config screen
 		if a.config == nil {
@@ -187,7 +187,7 @@ func (a *App) View() string {
 	}
 
 	content := a.screen.View()
-	
+
 	// Show help at the bottom if enabled
 	if a.showHelp {
 		// Convert shortHelp to key.Map for help.View
@@ -244,19 +244,20 @@ func Run(cfg *config.Config) error {
 // RunWithScreen runs the TUI application with a specific initial screen
 func RunWithScreen(cfg *config.Config, initialScreen ScreenType) error {
 	app := NewApp(cfg)
-	
+
 	// Set the initial screen if it exists
 	if screen, ok := app.screens[initialScreen]; ok {
 		app.screen = screen
 	}
-	
+
 	p := tea.NewProgram(app, tea.WithAltScreen())
-	model, err := p.Run()
+	_, err := p.Run()
 	if err != nil {
 		return fmt.Errorf("error running program: %w", err)
 	}
 
-	// If we need to perform any cleanup or post-run actions
-	_, _ = model.(*App)
+	// This type assertion is not needed since we're not using the result
+	// But we keep it as a comment for future reference in case we need to use it
+	// _, ok := model.(*App)
 	return nil
 }

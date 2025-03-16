@@ -2,12 +2,12 @@ package config
 
 import (
 	"bufio"
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
-
-	"github.com/spf13/viper"
 )
 
 // Config holds the application configuration
@@ -49,7 +49,7 @@ type PromptPattern struct {
 
 // GetConfigPath returns the path to the config file
 func GetConfigPath() string {
-	return filepath.Join(os.Getenv("HOME"), ".useful1", "config.yaml")
+	return filepath.Join(os.Getenv("HOME"), ".useful1", "config.json")
 }
 
 // Exists checks if configuration file exists
@@ -58,35 +58,65 @@ func Exists() bool {
 	return err == nil
 }
 
+// encodeCredentials encodes sensitive credentials using base64
+func encodeCredentials(value string) string {
+	return base64.StdEncoding.EncodeToString([]byte(value))
+}
+
+// decodeCredentials decodes base64 encoded credentials
+func decodeCredentials(value string) (string, error) {
+	decoded, err := base64.StdEncoding.DecodeString(value)
+	if err != nil {
+		return "", fmt.Errorf("failed to decode credential: %w", err)
+	}
+	return string(decoded), nil
+}
+
 // Load loads configuration from files, environment variables, etc.
 func Load() (*Config, error) {
 	config := &Config{}
+	configPath := GetConfigPath()
 
-	viper.SetConfigName("config")
-	viper.SetConfigType("yaml")
+	// Check if config file exists
+	if _, err := os.Stat(configPath); os.IsNotExist(err) {
+		return nil, fmt.Errorf("configuration not found. Please run 'useful1 config' first")
+	}
 
-	// Look only in the user's home directory for the config
-	viper.AddConfigPath(filepath.Join(os.Getenv("HOME"), ".useful1"))
-
-	// Set environment variable prefix
-	viper.SetEnvPrefix("USEFUL1")
-	viper.AutomaticEnv()
-
-	// Map environment variables
-	viper.BindEnv("github.token", "GITHUB_TOKEN")
-	viper.BindEnv("anthropic.token", "ANTHROPIC_API_KEY")
-
-	// Read the config file
-	if err := viper.ReadInConfig(); err != nil {
-		if _, ok := err.(viper.ConfigFileNotFoundError); ok {
-			return nil, fmt.Errorf("configuration not found. Please run 'useful1 config' first")
-		}
+	// Read the file directly
+	data, err := os.ReadFile(configPath)
+	if err != nil {
 		return nil, fmt.Errorf("error reading config file: %w", err)
 	}
 
-	// Unmarshal the configuration into the Config struct
-	if err := viper.Unmarshal(config); err != nil {
+	// Unmarshal JSON
+	if err := json.Unmarshal(data, config); err != nil {
 		return nil, fmt.Errorf("unable to decode config: %w", err)
+	}
+
+	// Decode credentials
+	if config.GitHub.Token != "" {
+		decodedToken, err := decodeCredentials(config.GitHub.Token)
+		if err != nil {
+			return nil, fmt.Errorf("failed to decode GitHub token: %w", err)
+		}
+		config.GitHub.Token = decodedToken
+	}
+
+	if config.Anthropic.Token != "" {
+		decodedToken, err := decodeCredentials(config.Anthropic.Token)
+		if err != nil {
+			return nil, fmt.Errorf("failed to decode Anthropic token: %w", err)
+		}
+		config.Anthropic.Token = decodedToken
+	}
+
+	// Check environment variables as override
+	if envToken := os.Getenv("GITHUB_TOKEN"); envToken != "" {
+		config.GitHub.Token = envToken
+	}
+
+	if envToken := os.Getenv("ANTHROPIC_API_KEY"); envToken != "" {
+		config.Anthropic.Token = envToken
 	}
 
 	// Validate the configuration
@@ -100,15 +130,15 @@ func Load() (*Config, error) {
 // validateConfig checks if the required configuration is present
 func validateConfig(config *Config) error {
 	if config.GitHub.Token == "" {
-		return fmt.Errorf("GitHub token is required")
+		return fmt.Errorf("github token is required")
 	}
 
 	if config.Anthropic.Token == "" {
-		return fmt.Errorf("Anthropic token is required")
+		return fmt.Errorf("anthropic token is required")
 	}
 
 	if config.CLI.Command == "" {
-		return fmt.Errorf("CLI command is required")
+		return fmt.Errorf("cli command is required")
 	}
 
 	return nil
@@ -151,7 +181,14 @@ func (c *Configurator) SetTaskBudgets(budgets map[string]float64) {
 
 // SetCLIToolPath sets the CLI tool path
 func (c *Configurator) SetCLIToolPath(path string) {
+	// Use default if empty
+	if path == "" {
+		path = "claude --dangerously-skip-permissions"
+	}
 	c.config.CLI.Command = path
+
+	// Clear any previously set args, as they will now be incorporated in the command string
+	c.config.CLI.Args = []string{}
 }
 
 // SetMonitoringSettings sets the issue monitoring settings
@@ -169,39 +206,51 @@ func (c *Configurator) Save() error {
 		return fmt.Errorf("failed to create config directory: %w", err)
 	}
 
-	// Create viper instance for saving
-	v := viper.New()
+	// Ensure CLI command has the default value if empty
+	if c.config.CLI.Command == "" {
+		c.config.CLI.Command = "claude --dangerously-skip-permissions"
+	}
 
-	// Set the config values
-	v.Set("github.token", c.config.GitHub.Token)
-	v.Set("github.user", c.config.GitHub.User)
-	v.Set("anthropic.token", c.config.Anthropic.Token)
-	v.Set("budgets.issue_response", c.config.Budgets.IssueResponse)
-	v.Set("budgets.pr_creation", c.config.Budgets.PRCreation)
-	v.Set("budgets.test_run", c.config.Budgets.TestRun)
-	v.Set("budgets.default", c.config.Budgets.Default)
-	v.Set("cli.command", c.config.CLI.Command)
-	v.Set("monitor.poll_interval", c.config.Monitor.PollInterval)
-	v.Set("monitor.check_mentions", c.config.Monitor.CheckMentions)
-	v.Set("monitor.repo_filter", c.config.Monitor.RepoFilter)
+	// Make a copy of the config with encoded credentials
+	configToSave := c.config
 
-	// Set default confirmation patterns
-	v.Set("prompt.confirmation_patterns", []map[string]interface{}{
-		{
-			"pattern":  "Are you sure you want to proceed?",
-			"response": "y",
-			"criteria": []string{"No test failures detected"},
-		},
-		{
-			"pattern":  "Do you want to create a PR?",
-			"response": "yes",
-			"criteria": []string{"Changes have been reviewed"},
-		},
-	})
+	// Base64 encode sensitive credentials
+	if configToSave.GitHub.Token != "" {
+		configToSave.GitHub.Token = encodeCredentials(configToSave.GitHub.Token)
+	}
+	if configToSave.Anthropic.Token != "" {
+		configToSave.Anthropic.Token = encodeCredentials(configToSave.Anthropic.Token)
+	}
 
-	// Write the config file
-	v.SetConfigFile(filepath.Join(configDir, "config.yaml"))
-	return v.WriteConfig()
+	// Set default confirmation patterns if none exist
+	if len(configToSave.Prompt.ConfirmationPatterns) == 0 {
+		configToSave.Prompt.ConfirmationPatterns = []PromptPattern{
+			{
+				Pattern:  "Are you sure you want to proceed?",
+				Response: "y",
+				Criteria: []string{"No test failures detected"},
+			},
+			{
+				Pattern:  "Do you want to create a PR?",
+				Response: "yes",
+				Criteria: []string{"Changes have been reviewed"},
+			},
+		}
+	}
+
+	// Marshal to JSON
+	configJSON, err := json.MarshalIndent(configToSave, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal config to JSON: %w", err)
+	}
+
+	// Write directly to file
+	configPath := filepath.Join(configDir, "config.json")
+	if err := os.WriteFile(configPath, configJSON, 0600); err != nil {
+		return fmt.Errorf("failed to write config file: %w", err)
+	}
+
+	return nil
 }
 
 // PromptForCLIToolPath prompts the user for the CLI tool path

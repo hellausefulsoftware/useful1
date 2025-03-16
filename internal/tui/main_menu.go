@@ -16,9 +16,8 @@ type MenuItem struct {
 // MainMenuScreen is the main menu of the application
 type MainMenuScreen struct {
 	BaseScreen
-	items       []MenuItem
-	cursor      int
-	selectedCmd tea.Cmd
+	items  []MenuItem
+	cursor int
 }
 
 // NewMainMenuScreen creates a new main menu screen
@@ -71,39 +70,39 @@ func (m *MainMenuScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // View renders the main menu
 func (m *MainMenuScreen) View() string {
 	theme := m.app.GetTheme()
-	
+
 	// Render title
 	s := m.RenderTitle() + "\n\n"
-	
+
 	// Header with app name and version
 	headerStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(theme.LightBlue)).Bold(true)
 	s += headerStyle.Render("Useful1 Automation Tool") + "\n\n"
-	
+
 	// Check if config exists
 	if m.app.GetConfig() == nil {
-		warning := theme.Bold.Copy().Foreground(lipgloss.Color(theme.Warning)).Render("Configuration not found! Please run the Config operation first.")
+		warning := theme.Bold.Foreground(lipgloss.Color(theme.Warning)).Render("Configuration not found! Please run the Config operation first.")
 		s += warning + "\n\n"
 	}
-	
+
 	// Render subtitle
 	s += theme.Subtitle.Render("Select an operation:") + "\n\n"
-	
+
 	// Render menu items
 	for i, item := range m.items {
 		cursor := " "
 		style := theme.UnselectedItem
-		
+
 		if m.cursor == i {
 			cursor = ">"
 			style = theme.SelectedItem
 		}
-		
+
 		s += cursor + " " + style.Render(item.title) + " - " + theme.Text.Render(item.description) + "\n"
 	}
-	
+
 	// Add empty line and footer
 	s += "\n" + m.RenderFooter()
-	
+
 	// Left-align in terminal
 	return lipgloss.NewStyle().Width(m.app.GetWidth()).Align(lipgloss.Left).Render(s)
 }

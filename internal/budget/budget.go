@@ -50,7 +50,10 @@ func SetupTaskBudgets() (map[string]float64, error) {
 	// Ask for budget for each task type
 	for i, task := range tasks {
 		fmt.Printf("\n%d. %s ($): ", i+1, task.Description)
-		budgetStr, _ := reader.ReadString('\n')
+		budgetStr, err := reader.ReadString('\n')
+		if err != nil {
+			return nil, fmt.Errorf("error reading budget input: %w", err)
+		}
 		budgetStr = strings.TrimSpace(budgetStr)
 
 		// Parse the budget amount
@@ -76,7 +79,10 @@ func SetupTaskBudgets() (map[string]float64, error) {
 
 	// Confirm the budgets
 	fmt.Println("\nAre these budgets correct? (y/n)")
-	confirm, _ := reader.ReadString('\n')
+	confirm, err := reader.ReadString('\n')
+	if err != nil {
+		return nil, fmt.Errorf("error reading confirmation: %w", err)
+	}
 	confirm = strings.TrimSpace(strings.ToLower(confirm))
 
 	if confirm != "y" && confirm != "yes" {

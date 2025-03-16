@@ -16,16 +16,15 @@ import (
 // MonitorScreen is the screen for monitoring GitHub issues
 type MonitorScreen struct {
 	BaseScreen
-	spinner     spinner.Model
-	executor    *cli.Executor
-	monitor     *github.Monitor
-	running     bool
-	runOnce     bool
-	pollTime    time.Time
-	nextPoll    time.Time
-	issues      []Issue
-	logs        []string
-	err         error
+	spinner  spinner.Model
+	executor *cli.Executor
+	monitor  *github.Monitor
+	running  bool
+	runOnce  bool
+	pollTime time.Time
+	nextPoll time.Time
+	logs     []string
+	err      error
 }
 
 // Issue represents a GitHub issue for display
@@ -41,17 +40,17 @@ type Issue struct {
 func NewMonitorScreen(app *App) *MonitorScreen {
 	s := spinner.New()
 	s.Spinner = spinner.Dot
-	
+
 	var executor *cli.Executor
 	if app.GetConfig() != nil {
 		executor = cli.NewExecutor(app.GetConfig())
 	}
-	
+
 	var monitor *github.Monitor
 	if app.GetConfig() != nil && executor != nil {
 		monitor = github.NewMonitor(app.GetConfig(), executor)
 	}
-	
+
 	return &MonitorScreen{
 		BaseScreen: NewBaseScreen(app, "Monitor GitHub Issues"),
 		spinner:    s,
@@ -72,7 +71,7 @@ func (m *MonitorScreen) Init() tea.Cmd {
 // Update handles UI updates for the monitor screen
 func (m *MonitorScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
-	
+
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch {
@@ -80,7 +79,7 @@ func (m *MonitorScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Stop monitoring and go back
 			m.running = false
 			return m, m.app.ChangeScreen(ScreenMainMenu)
-			
+
 		case key.Matches(msg, m.app.keyMap.Execute):
 			if !m.running {
 				// Start monitoring
@@ -91,7 +90,7 @@ func (m *MonitorScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.nextPoll = m.pollTime.Add(time.Duration(m.app.GetConfig().Monitor.PollInterval) * time.Minute)
 				return m, m.checkIssues()
 			}
-			
+
 		case key.Matches(msg, m.app.keyMap.Select):
 			if !m.running {
 				// Run once
@@ -101,17 +100,17 @@ func (m *MonitorScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, m.checkIssues()
 			}
 		}
-		
+
 	case spinner.TickMsg:
 		if m.running {
 			var cmd tea.Cmd
 			m.spinner, cmd = m.spinner.Update(msg)
 			cmds = append(cmds, cmd)
 		}
-		
+
 	case monitorResultMsg:
 		m.logs = append(m.logs, msg.log...)
-		
+
 		if m.runOnce {
 			m.running = false
 			m.logs = append(m.logs, "Check completed")
@@ -121,13 +120,13 @@ func (m *MonitorScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.nextPoll = m.pollTime.Add(time.Duration(m.app.GetConfig().Monitor.PollInterval) * time.Minute)
 			cmds = append(cmds, m.scheduleNextPoll())
 		}
-		
+
 		if msg.err != nil {
 			m.err = msg.err
 			m.logs = append(m.logs, "Error: "+msg.err.Error())
 			m.running = false
 		}
-	
+
 	case tickMsg:
 		if m.running && !m.runOnce {
 			now := time.Now()
@@ -138,27 +137,27 @@ func (m *MonitorScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.scheduleNextPoll()
 		}
 	}
-	
+
 	if m.running {
 		spinnerCmd := m.spinner.Tick
 		cmds = append(cmds, spinnerCmd)
 	}
-	
+
 	return m, tea.Batch(cmds...)
 }
 
 // View renders the monitor screen
 func (m *MonitorScreen) View() string {
 	theme := m.app.GetTheme()
-	
+
 	content := m.RenderTitle() + "\n\n"
-	
+
 	if m.running {
 		statusLine := m.spinner.View() + " "
 		if m.runOnce {
 			statusLine += "Checking issues once..."
 		} else {
-			nextPollIn := m.nextPoll.Sub(time.Now()).Round(time.Second)
+			nextPollIn := time.Until(m.nextPoll).Round(time.Second)
 			statusLine += fmt.Sprintf("Monitoring (next poll in %s)", nextPollIn)
 		}
 		infoStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(theme.Info))
@@ -168,35 +167,35 @@ func (m *MonitorScreen) View() string {
 		content += theme.Text.Render("Press E to start continuous monitoring") + "\n"
 		content += theme.Text.Render("Press Enter to check issues once") + "\n\n"
 	}
-	
+
 	// Log section
 	content += theme.Bold.Render("Activity Log:") + "\n\n"
-	
+
 	// Only show the last 10 log entries to prevent cluttering
 	displayLogs := m.logs
 	if len(displayLogs) > 10 {
 		displayLogs = displayLogs[len(displayLogs)-10:]
 	}
-	
+
 	logContent := strings.Join(displayLogs, "\n")
 	logStyle := lipgloss.NewStyle().
 		BorderStyle(lipgloss.RoundedBorder()).
 		BorderForeground(lipgloss.Color(theme.BorderColor)).
 		Padding(1).
 		Width(m.app.GetWidth() - 4) // Account for padding and border
-	
+
 	content += logStyle.Render(logContent) + "\n\n"
-	
+
 	// Instructions
 	if !m.running {
 		content += theme.Faint.Render("ESC to go back") + "\n\n"
 	} else {
 		content += theme.Faint.Render("ESC to stop monitoring and go back") + "\n\n"
 	}
-	
+
 	// Footer
 	content += m.RenderFooter()
-	
+
 	// Left-align in terminal
 	return lipgloss.NewStyle().Width(m.app.GetWidth()).Align(lipgloss.Left).Render(content)
 }
@@ -228,10 +227,10 @@ func (m *MonitorScreen) checkIssues() tea.Cmd {
 				err: fmt.Errorf("monitor not configured"),
 			}
 		}
-		
+
 		var logs []string
 		var err error
-		
+
 		if m.runOnce {
 			logs = append(logs, "Running a one-time check for issues...")
 			err = m.monitor.CheckOnce()
@@ -240,13 +239,13 @@ func (m *MonitorScreen) checkIssues() tea.Cmd {
 			// Simulating a check that doesn't start continuous monitoring
 			err = m.monitor.CheckOnce()
 		}
-		
+
 		if err != nil {
 			logs = append(logs, "Error checking issues: "+err.Error())
 		} else {
 			logs = append(logs, "Successfully checked for issues")
 		}
-		
+
 		return monitorResultMsg{
 			log: logs,
 			err: err,

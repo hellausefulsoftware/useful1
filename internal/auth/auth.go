@@ -6,7 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"os"
 	"strings"
@@ -32,14 +32,20 @@ func SetupGitHubOAuth() (*GitHubAuth, error) {
 
 	// Check if user already has a token
 	fmt.Println("Do you already have a GitHub Personal Access Token? (y/n)")
-	hasToken, _ := reader.ReadString('\n')
+	hasToken, err := reader.ReadString('\n')
+	if err != nil {
+		return nil, fmt.Errorf("error reading input: %w", err)
+	}
 	hasToken = strings.TrimSpace(strings.ToLower(hasToken))
 
 	var token string
 	if hasToken == "y" || hasToken == "yes" {
 		// Use existing token
 		fmt.Println("Enter your GitHub Personal Access Token:")
-		token, _ = reader.ReadString('\n')
+		token, err = reader.ReadString('\n')
+		if err != nil {
+			return nil, fmt.Errorf("error reading token: %w", err)
+		}
 		token = strings.TrimSpace(token)
 	} else {
 		// Guide user to create a new token
@@ -51,7 +57,10 @@ func SetupGitHubOAuth() (*GitHubAuth, error) {
 		fmt.Println("5. Click 'Generate token' and copy the token")
 		fmt.Println("Enter the new token:")
 
-		token, _ = reader.ReadString('\n')
+		token, err = reader.ReadString('\n')
+		if err != nil {
+			return nil, fmt.Errorf("error reading token: %w", err)
+		}
 		token = strings.TrimSpace(token)
 	}
 
@@ -94,14 +103,20 @@ func SetupAnthropicOAuth() (*AnthropicAuth, error) {
 
 	// Check if user already has a token
 	fmt.Println("Do you already have an Anthropic API Key? (y/n)")
-	hasToken, _ := reader.ReadString('\n')
+	hasToken, err := reader.ReadString('\n')
+	if err != nil {
+		return nil, fmt.Errorf("error reading input: %w", err)
+	}
 	hasToken = strings.TrimSpace(strings.ToLower(hasToken))
 
 	var token string
 	if hasToken == "y" || hasToken == "yes" {
 		// Use existing token
 		fmt.Println("Enter your Anthropic API Key:")
-		token, _ = reader.ReadString('\n')
+		token, err = reader.ReadString('\n')
+		if err != nil {
+			return nil, fmt.Errorf("error reading token: %w", err)
+		}
 		token = strings.TrimSpace(token)
 	} else {
 		// Guide user to create a new token
@@ -112,7 +127,10 @@ func SetupAnthropicOAuth() (*AnthropicAuth, error) {
 		fmt.Println("4. Copy the key")
 		fmt.Println("Enter the new API key:")
 
-		token, _ = reader.ReadString('\n')
+		token, err = reader.ReadString('\n')
+		if err != nil {
+			return nil, fmt.Errorf("error reading token: %w", err)
+		}
 		token = strings.TrimSpace(token)
 	}
 
@@ -134,7 +152,7 @@ func validateAnthropicKey(apiKey string) error {
 	url := "https://api.anthropic.com/v1/messages"
 
 	// Simple request body
-	requestBody, _ := json.Marshal(map[string]interface{}{
+	requestBody, err := json.Marshal(map[string]interface{}{
 		"model":      "claude-3-haiku-20240307",
 		"max_tokens": 10,
 		"messages": []map[string]string{
@@ -144,11 +162,14 @@ func validateAnthropicKey(apiKey string) error {
 			},
 		},
 	})
+	if err != nil {
+		return fmt.Errorf("failed to marshal request: %w", err)
+	}
 
 	// Create request
 	req, err := http.NewRequest("POST", url, bytes.NewBuffer(requestBody))
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to create request: %w", err)
 	}
 
 	// Set headers
@@ -160,13 +181,20 @@ func validateAnthropicKey(apiKey string) error {
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to send request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if cerr := resp.Body.Close(); cerr != nil {
+			err = fmt.Errorf("failed to close response body: %w", cerr)
+		}
+	}()
 
 	// Check response status
 	if resp.StatusCode != http.StatusOK {
-		body, _ := ioutil.ReadAll(resp.Body)
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return fmt.Errorf("failed to read error response: %w", err)
+		}
 		return fmt.Errorf("API request failed: %s - %s", resp.Status, string(body))
 	}
 

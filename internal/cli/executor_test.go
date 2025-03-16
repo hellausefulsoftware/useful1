@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"testing"
@@ -11,10 +12,10 @@ import (
 
 // MockGitHubClient is a mock implementation of the GitHub client for testing
 type MockGitHubClient struct {
-	RespondToIssueFunc       func(owner, repo string, issueNumber int, comment string) error
-	CreatePullRequestFunc    func(owner, repo, title, body, head, base string) error
-	GetIssuesFunc            func(owner, repo string) error
-	GetIssueCommentsFunc     func(owner, repo string, issueNumber int) error
+	RespondToIssueFunc    func(owner, repo string, issueNumber int, comment string) error
+	CreatePullRequestFunc func(owner, repo, title, body, head, base string) error
+	GetIssuesFunc         func(owner, repo string) error
+	GetIssueCommentsFunc  func(owner, repo string, issueNumber int) error
 }
 
 // Test helper to create a basic test config
@@ -90,18 +91,18 @@ func TestExtractResponse(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			response, err := executor.extractResponse(tt.output)
-			
+
 			// Check error condition
 			if (err != nil) != tt.wantErr {
 				t.Errorf("extractResponse() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
-			
+
 			// Skip further checks if we expected an error
 			if tt.wantErr {
 				return
 			}
-			
+
 			// Check response content
 			if response != tt.expected {
 				t.Errorf("extractResponse() got = %v, want %v", response, tt.expected)
@@ -198,19 +199,27 @@ func TestFormatErrorResponse(t *testing.T) {
 
 	// Redirect stdout to capture the output
 	oldStdout := os.Stdout
-	r, w, _ := os.Pipe()
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("Failed to create pipe: %v", err)
+	}
 	os.Stdout = w
 
 	// Call the method
 	executor.formatErrorResponse(testErr, context)
 
 	// Restore stdout
-	w.Close()
+	if closeErr := w.Close(); closeErr != nil {
+		t.Logf("Warning: Failed to close pipe writer: %v", closeErr)
+	}
 	os.Stdout = oldStdout
 
 	// Read captured output
 	var buf [1024]byte
-	n, _ := r.Read(buf[:])
+	n, readErr := r.Read(buf[:])
+	if readErr != nil && readErr != io.EOF {
+		t.Fatalf("Failed to read from pipe: %v", readErr)
+	}
 	output := string(buf[:n])
 
 	// Verify the output contains expected fields

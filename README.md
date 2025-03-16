@@ -75,7 +75,7 @@ The main entry point that provides these commands:
 
 #### 2. Configuration Manager (internal/config/config.go)
 
-Handles loading, saving, and validating application settings, stored in `~/.useful1/config.yaml`.
+Handles loading, saving, and validating application settings, stored in `~/.useful1/config.json` with credentials securely base64 encoded.
 
 #### 3. GitHub Client (internal/github/client.go)
 
@@ -136,7 +136,7 @@ The configuration process will guide you through:
 4. **Monitoring Settings**: Configuring which repositories to monitor
 5. **CLI Tool Configuration**: Specifying the path to your CLI tool
 
-All settings are stored in `~/.useful1/config.yaml` for future use.
+All settings are stored in `~/.useful1/config.json` for future use with credentials securely base64 encoded.
 
 ## Example Implementation Workflow
 

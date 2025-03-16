@@ -13,7 +13,7 @@ import (
 func main() {
 	// Define program-wide flags
 	var programmatic bool
-	
+
 	rootCmd := &cobra.Command{
 		Use:   "useful1",
 		Short: "Automates GitHub tasks via CLI tool integration",
@@ -27,11 +27,11 @@ func main() {
 			runTUI()
 		},
 	}
-	
+
 	// Add programmatic flag to all commands
 	rootCmd.PersistentFlags().BoolVar(&programmatic, "programmatic", false, "Run in programmatic mode (machine-readable output)")
 
-	// Define subcommands 
+	// Define subcommands
 	respondCmd := &cobra.Command{
 		Use:   "respond",
 		Short: "Respond to GitHub issues",
@@ -185,81 +185,121 @@ func runCLIExecutor(cmd *cobra.Command, screenType tui.ScreenType) {
 
 	// Create CLI executor
 	executor := cli.NewExecutor(cfg)
-	
+
 	// Get command flags and arguments
 	flags := cmd.Flags()
-	
+
 	// Process command based on screen type
 	var cmdErr error
 	switch screenType {
 	case tui.ScreenRespond:
 		// Extract values needed for respond command
-		issueNumber, _ := flags.GetString("issue")
-		issueFile, _ := flags.GetString("issue-file")
-		owner, _ := flags.GetString("owner")
-		repo, _ := flags.GetString("repo")
-		
+		issueNumber, err := flags.GetString("issue")
+		if err != nil {
+			cmdErr = fmt.Errorf("failed to get issue parameter: %w", err)
+			break
+		}
+		issueFile, err := flags.GetString("issue-file")
+		if err != nil {
+			cmdErr = fmt.Errorf("failed to get issue-file parameter: %w", err)
+			break
+		}
+		owner, err := flags.GetString("owner")
+		if err != nil {
+			cmdErr = fmt.Errorf("failed to get owner parameter: %w", err)
+			break
+		}
+		repo, err := flags.GetString("repo")
+		if err != nil {
+			cmdErr = fmt.Errorf("failed to get repo parameter: %w", err)
+			break
+		}
+
 		if issueFile != "" && owner != "" && repo != "" {
 			// For issue text in a file
-			issueNum, _ := flags.GetInt("number")
-			
+			issueNum, err := flags.GetInt("number")
+			if err != nil {
+				cmdErr = fmt.Errorf("failed to get number parameter: %w", err)
+				break
+			}
+
 			// Read issue text from file
 			issueText, err := os.ReadFile(issueFile)
 			if err != nil {
 				cmdErr = fmt.Errorf("failed to read issue file: %w", err)
 				break
 			}
-			
+
 			cmdErr = executor.RespondToIssueText(owner, repo, issueNum, string(issueText))
 		} else if issueNumber != "" {
 			// For direct issue number
-			template, _ := flags.GetString("template")
+			template, err := flags.GetString("template")
+			if err != nil {
+				cmdErr = fmt.Errorf("failed to get template parameter: %w", err)
+				break
+			}
 			cmdErr = executor.RespondToIssue(issueNumber, template)
 		} else {
 			cmdErr = fmt.Errorf("missing required arguments: issue or issue-file with owner/repo/number")
 		}
-		
+
 	case tui.ScreenPR:
 		// Extract values needed for PR command
-		branch, _ := flags.GetString("branch")
-		base, _ := flags.GetString("base")
-		title, _ := flags.GetString("title")
-		
+		branch, err := flags.GetString("branch")
+		if err != nil {
+			cmdErr = fmt.Errorf("failed to get branch parameter: %w", err)
+			break
+		}
+		base, err := flags.GetString("base")
+		if err != nil {
+			cmdErr = fmt.Errorf("failed to get base parameter: %w", err)
+			break
+		}
+		title, err := flags.GetString("title")
+		if err != nil {
+			cmdErr = fmt.Errorf("failed to get title parameter: %w", err)
+			break
+		}
+
 		if branch == "" {
 			cmdErr = fmt.Errorf("missing required argument: branch")
 			break
 		}
-		
+
 		if base == "" {
 			base = "main" // Default base branch
 		}
-		
+
 		cmdErr = executor.CreatePullRequest(branch, base, title)
-		
+
 	case tui.ScreenTest:
 		// Extract values needed for test command
-		suite, _ := flags.GetString("suite")
+		suite, err := flags.GetString("suite")
+		if err != nil {
+			cmdErr = fmt.Errorf("failed to get suite parameter: %w", err)
+			break
+		}
 		cmdErr = executor.RunTests(suite)
-		
+
 	case tui.ScreenConfig:
 		// Config just shows success in programmatic mode since config is already loaded
 		fmt.Println("{\"status\": \"success\", \"message\": \"Configuration loaded successfully\"}")
 		return
-		
+
 	case tui.ScreenMonitor:
 		// Start monitoring in programmatic mode
 		// This would be a long-running process with machine-readable output
 		fmt.Println("{\"status\": \"starting\", \"message\": \"Monitoring started\"}")
-		
+
 		// Implement monitor functionality here
 		// For now, just show a placeholder message
 		fmt.Println("{\"status\": \"error\", \"message\": \"Programmatic monitoring not implemented yet\"}")
 		os.Exit(1)
-		
+
 	default:
 		cmdErr = fmt.Errorf("unknown screen type: %v", screenType)
 	}
-	
+
 	// Handle any errors
 	if cmdErr != nil {
 		fmt.Fprintf(os.Stderr, "{\"status\": \"error\", \"message\": \"%s\"}\n", cmdErr.Error())

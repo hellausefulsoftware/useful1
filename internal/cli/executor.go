@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"os/exec"
 	"strconv"
@@ -38,12 +37,12 @@ func (e *Executor) formatErrorResponse(err error, context map[string]interface{}
 		"message":   err.Error(),
 		"timestamp": time.Now().Format(time.RFC3339),
 	}
-	
+
 	// Add any additional context
 	for k, v := range context {
 		response[k] = v
 	}
-	
+
 	// Marshal and print
 	jsonResponse, jsonErr := json.Marshal(response)
 	if jsonErr == nil {
@@ -87,26 +86,26 @@ func (e *Executor) RespondToIssue(issueNumber string, templateName string) error
 		issueNum,
 		fmt.Sprintf("Automated response:\n\n```\n%s\n```", output),
 	)
-	
+
 	if err != nil {
 		return err
 	}
-	
+
 	// Output JSON for programmatic mode
 	response := map[string]interface{}{
-		"status": "success",
-		"issue_number": issueNum,
-		"owner": owner,
-		"repo": repo,
-		"template": templateName,
+		"status":          "success",
+		"issue_number":    issueNum,
+		"owner":           owner,
+		"repo":            repo,
+		"template":        templateName,
 		"response_length": len(output),
 	}
-	
+
 	jsonResponse, err := json.Marshal(response)
 	if err != nil {
 		return fmt.Errorf("error formatting JSON response: %w", err)
 	}
-	
+
 	fmt.Println(string(jsonResponse))
 	return nil
 }
@@ -116,18 +115,22 @@ func (e *Executor) RespondToIssueText(owner, repo string, issueNumber int, issue
 	fmt.Printf("Generating response for issue #%d in %s/%s\n", issueNumber, owner, repo)
 
 	// Create a temporary file with the issue text
-	tmpFile, err := ioutil.TempFile("", "issue-*.txt")
+	tmpFile, err := os.CreateTemp("", "issue-*.txt")
 	if err != nil {
 		return fmt.Errorf("failed to create temporary file: %w", err)
 	}
-	defer os.Remove(tmpFile.Name())
+	defer func() {
+		if removeErr := os.Remove(tmpFile.Name()); removeErr != nil {
+			fmt.Printf("Warning: Failed to remove temporary file %s: %v\n", tmpFile.Name(), removeErr)
+		}
+	}()
 
 	// Write issue text to the file
-	if _, err := tmpFile.WriteString(issueText); err != nil {
-		return fmt.Errorf("failed to write to temporary file: %w", err)
+	if _, writeErr := tmpFile.WriteString(issueText); writeErr != nil {
+		return fmt.Errorf("failed to write to temporary file: %w", writeErr)
 	}
-	if err := tmpFile.Close(); err != nil {
-		return fmt.Errorf("failed to close temporary file: %w", err)
+	if closeErr := tmpFile.Close(); closeErr != nil {
+		return fmt.Errorf("failed to close temporary file: %w", closeErr)
 	}
 
 	// Set up command arguments
@@ -153,11 +156,15 @@ func (e *Executor) RespondToIssueText(owner, repo string, issueNumber int, issue
 	}
 
 	// Create a temporary metadata file
-	metadataFile, err := ioutil.TempFile("", "metadata-*.json")
+	metadataFile, err := os.CreateTemp("", "metadata-*.json")
 	if err != nil {
 		return fmt.Errorf("failed to create metadata file: %w", err)
 	}
-	defer os.Remove(metadataFile.Name())
+	defer func() {
+		if removeErr := os.Remove(metadataFile.Name()); removeErr != nil {
+			fmt.Printf("Warning: Failed to remove metadata file %s: %v\n", metadataFile.Name(), removeErr)
+		}
+	}()
 
 	// Write metadata to the file
 	metadataBytes, err := json.Marshal(metadata)
@@ -165,11 +172,11 @@ func (e *Executor) RespondToIssueText(owner, repo string, issueNumber int, issue
 		return fmt.Errorf("failed to marshal metadata: %w", err)
 	}
 
-	if _, err := metadataFile.Write(metadataBytes); err != nil {
-		return fmt.Errorf("failed to write metadata: %w", err)
+	if _, writeErr := metadataFile.Write(metadataBytes); writeErr != nil {
+		return fmt.Errorf("failed to write metadata: %w", writeErr)
 	}
-	if err := metadataFile.Close(); err != nil {
-		return fmt.Errorf("failed to close metadata file: %w", err)
+	if closeErr := metadataFile.Close(); closeErr != nil {
+		return fmt.Errorf("failed to close metadata file: %w", closeErr)
 	}
 
 	// Add metadata flag
@@ -188,26 +195,26 @@ func (e *Executor) RespondToIssueText(owner, repo string, issueNumber int, issue
 	}
 
 	// Post response to the issue
-	if err := e.github.RespondToIssue(owner, repo, issueNumber, response); err != nil {
-		return fmt.Errorf("failed to post response: %w", err)
+	if postErr := e.github.RespondToIssue(owner, repo, issueNumber, response); postErr != nil {
+		return fmt.Errorf("failed to post response: %w", postErr)
 	}
 
 	// Output JSON for programmatic mode
 	responseObj := map[string]interface{}{
-		"status": "success",
-		"issue_number": issueNumber,
-		"owner": owner,
-		"repo": repo,
+		"status":          "success",
+		"issue_number":    issueNumber,
+		"owner":           owner,
+		"repo":            repo,
 		"response_length": len(response),
-		"timestamp": time.Now().Format(time.RFC3339),
-		"url": fmt.Sprintf("https://github.com/%s/%s/issues/%d", owner, repo, issueNumber),
+		"timestamp":       time.Now().Format(time.RFC3339),
+		"url":             fmt.Sprintf("https://github.com/%s/%s/issues/%d", owner, repo, issueNumber),
 	}
 
 	jsonResponse, err := json.Marshal(responseObj)
 	if err != nil {
 		return fmt.Errorf("error formatting JSON response: %w", err)
 	}
-	
+
 	fmt.Println(string(jsonResponse))
 	return nil
 }
@@ -243,10 +250,10 @@ func (e *Executor) CreatePullRequest(branch, base, title string) error {
 
 	// Output JSON for programmatic mode
 	response := map[string]interface{}{
-		"status": "success",
-		"branch": branch,
-		"base": base,
-		"title": title,
+		"status":    "success",
+		"branch":    branch,
+		"base":      base,
+		"title":     title,
 		"timestamp": time.Now().Format(time.RFC3339),
 	}
 
@@ -258,7 +265,7 @@ func (e *Executor) CreatePullRequest(branch, base, title string) error {
 	if err != nil {
 		return fmt.Errorf("error formatting JSON response: %w", err)
 	}
-	
+
 	fmt.Println(string(jsonResponse))
 	return nil
 }
@@ -289,23 +296,23 @@ func (e *Executor) RunTests(testSuite string) error {
 				skipped++
 			}
 		}
-		
+
 		// Output JSON for programmatic mode with error details
 		response := map[string]interface{}{
-			"status": "error",
-			"suite": testSuite,
-			"error": err.Error(),
-			"passed": passed,
-			"failed": failed,
-			"skipped": skipped,
+			"status":    "error",
+			"suite":     testSuite,
+			"error":     err.Error(),
+			"passed":    passed,
+			"failed":    failed,
+			"skipped":   skipped,
 			"timestamp": time.Now().Format(time.RFC3339),
 		}
-		
+
 		jsonResponse, jsonErr := json.Marshal(response)
 		if jsonErr == nil {
 			fmt.Println(string(jsonResponse))
 		}
-		
+
 		return err
 	}
 
@@ -325,11 +332,11 @@ func (e *Executor) RunTests(testSuite string) error {
 
 	// Output JSON for programmatic mode
 	response := map[string]interface{}{
-		"status": "success",
-		"suite": testSuite,
-		"passed": passed,
-		"failed": failed,
-		"skipped": skipped,
+		"status":    "success",
+		"suite":     testSuite,
+		"passed":    passed,
+		"failed":    failed,
+		"skipped":   skipped,
 		"timestamp": time.Now().Format(time.RFC3339),
 	}
 
@@ -337,15 +344,25 @@ func (e *Executor) RunTests(testSuite string) error {
 	if err != nil {
 		return fmt.Errorf("error formatting JSON response: %w", err)
 	}
-	
+
 	fmt.Println(string(jsonResponse))
 	return nil
 }
 
 // executeWithPrompts runs a command and handles interactive prompts
 func (e *Executor) executeWithPrompts(cmd string, args []string) (string, error) {
-	// Create the command
-	command := exec.Command(cmd, args...)
+	// Parse the command string to handle commands with arguments
+	// This allows for "claude --dangerously-skip-permissions" to be processed correctly
+	cmdParts := strings.Fields(cmd)
+	var command *exec.Cmd
+
+	if len(cmdParts) > 1 {
+		// Command has built-in arguments
+		command = exec.Command(cmdParts[0], append(cmdParts[1:], args...)...)
+	} else {
+		// Command is a single word
+		command = exec.Command(cmd, args...)
+	}
 
 	// Create pipes for stdin, stdout, stderr
 	stdin, err := command.StdinPipe()
@@ -389,10 +406,14 @@ func (e *Executor) executeWithPrompts(cmd string, args []string) (string, error)
 					// Check if criteria are met
 					if e.checkCriteria(outputBuffer.String(), pattern.Criteria) {
 						// Send confirmation
-						fmt.Fprintln(stdin, pattern.Response)
+						if _, err := fmt.Fprintln(stdin, pattern.Response); err != nil {
+							fmt.Printf("Warning: Failed to send confirmation response: %v\n", err)
+						}
 					} else {
 						// Send rejection or cancel
-						fmt.Fprintln(stdin, "n")
+						if _, err := fmt.Fprintln(stdin, "n"); err != nil {
+							fmt.Printf("Warning: Failed to send rejection response: %v\n", err)
+						}
 					}
 				}
 			}

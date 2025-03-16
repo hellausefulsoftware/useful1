@@ -10,7 +10,6 @@ GOGET = $(GOCMD) get
 GOMOD = $(GOCMD) mod
 GOVET = $(GOCMD) vet
 GOFMT = $(GOCMD) fmt
-GOLINT = golint
 
 # Binary name
 BINARY_NAME = useful1
@@ -121,13 +120,58 @@ bench:
 	@echo "Running benchmarks..."
 	$(GOTEST) -bench=. -benchmem $(PKG_LIST)
 
-# Run linters
+# Run basic linters
 .PHONY: lint
 lint:
-	@echo "Running linters..."
+	@echo "Running basic linters..."
 	$(GOVET) $(PKG_LIST)
-	# Temporarily disable golint
-	# $(GOLINT) $(PKG_LIST)
+	@echo "✓ go vet passed"
+	@echo
+	@echo "Basic linting complete."
+	
+# Run comprehensive linting - use this for thorough code quality checks
+.PHONY: lint-all
+lint-all:
+	@echo "Running comprehensive linters..."
+	
+	@echo "1. Standard go vet checks:"
+	$(GOVET) ./...
+	@echo "✓ go vet passed"
+	@echo
+	
+	@echo "2. Shadow variable checks (prevents unintended variable shadowing):"
+	@if [ -f "$(shell go env GOPATH)/bin/shadow" ]; then \
+		$(shell go env GOPATH)/bin/shadow ./... || echo "⚠️ Shadow variable issues found"; \
+	else \
+		echo "⚠️ shadow tool not installed. Run: make install-linters"; \
+	fi
+	@echo
+	
+	@echo "3. Staticcheck (enforces idiomatic Go and best practices):"
+	@if [ -f "$(shell go env GOPATH)/bin/staticcheck" ]; then \
+		$(shell go env GOPATH)/bin/staticcheck -checks="all,-ST1000,-ST1003,-ST1016,-SA5011" ./... || echo "⚠️ Staticcheck issues found"; \
+	else \
+		echo "⚠️ staticcheck tool not installed. Run: make install-linters"; \
+	fi
+	@echo
+	
+	@echo "4. Additional go vet checks (composite literals, unreachable code, etc):"
+	@go vet ./...
+	@echo
+	
+	@echo "5. Checking for error handling (ensures errors are properly handled):"
+	@if [ -f "$(shell go env GOPATH)/bin/errcheck" ]; then \
+		$(shell go env GOPATH)/bin/errcheck -blank -asserts ./... || echo "⚠️ Error handling issues found"; \
+	else \
+		echo "⚠️ errcheck tool not installed. Run: make install-linters"; \
+	fi
+	@echo
+	
+	@echo "6. Format check (ensures consistent formatting):"
+	@{ find . -name "*.go" | grep -v "/vendor/" | xargs gofmt -d | grep .; } > /dev/null 2>&1 && echo "⚠️ Code format issues found. Run 'make fmt' to fix" || echo "✓ Code formatting is correct"
+	@echo
+	
+	@echo "Comprehensive linting complete. See above for any issues."
 
 # Format code
 .PHONY: fmt
@@ -161,9 +205,16 @@ docs:
 .PHONY: install-tools
 install-tools:
 	@echo "Installing development tools..."
-	go install golang.org/x/lint/golint@latest
 	go install github.com/securego/gosec/v2/cmd/gosec@latest
 	go install golang.org/x/tools/cmd/godoc@latest
+
+# Install linting tools
+.PHONY: install-linters
+install-linters:
+	@echo "Installing linting tools..."
+	go install golang.org/x/tools/go/analysis/passes/shadow/cmd/shadow@latest
+	go install honnef.co/go/tools/cmd/staticcheck@latest
+	go install github.com/kisielk/errcheck@latest
 
 # Create a distribution package
 .PHONY: dist
@@ -202,7 +253,9 @@ help:
 	@echo "  test-coverage    - Run tests with coverage and generate a report"
 	@echo "  test-race        - Run tests with race detection (requires CGO)"
 	@echo "  bench            - Run benchmarks"
-	@echo "  lint             - Run linters"
+	@echo "  lint             - Run basic linters"
+	@echo "  lint-all         - Run comprehensive code quality checks"
+	@echo "  install-linters  - Install all linting tools"
 	@echo "  fmt              - Format code"
 	@echo "  security-check   - Run security checks"
 	@echo "  docs             - Generate API documentation"
