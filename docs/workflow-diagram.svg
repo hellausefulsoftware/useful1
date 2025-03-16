@@ -1,0 +1,222 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 1000">
+  <style>
+    svg {
+      background: #1e2133;
+    }
+    text {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+      font-size: 14px;
+      fill: #e1e1e6;
+    }
+    .node rect {
+      fill: #2d3142;
+      stroke: #6b8afd;
+      stroke-width: 2;
+      rx: 5;
+      ry: 5;
+    }
+    .decision rect {
+      fill: #33302e;
+      stroke: #ffb74d;
+      stroke-width: 2;
+      rx: 5;
+      ry: 5;
+    }
+    .arrow {
+      stroke: #9ba0b0;
+      stroke-width: 2;
+      fill: none;
+      marker-end: url(#arrowhead);
+    }
+    .arrow-text {
+      font-size: 12px;
+      fill: #b8bfd0;
+    }
+    .title {
+      font-size: 20px;
+      font-weight: bold;
+      text-anchor: middle;
+      fill: #ffffff;
+    }
+  </style>
+  
+  <defs>
+    <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#9ba0b0" />
+    </marker>
+  </defs>
+  
+  <!-- Title -->
+  <text x="400" y="30" class="title">useful1 Automated Issue Resolution Workflow</text>
+  
+  <!-- Nodes -->
+  <g transform="translate(0, 20)">
+    <!-- Developer identifies issue -->
+    <g transform="translate(400, 60)">
+      <rect x="-150" y="-25" width="300" height="50" class="node" />
+      <text x="0" y="5" text-anchor="middle">Developer identifies trivial issue</text>
+    </g>
+    
+    <!-- Developer adds explanation -->
+    <g transform="translate(400, 140)">
+      <rect x="-150" y="-25" width="300" height="50" class="node" />
+      <text x="0" y="5" text-anchor="middle">Developer adds explanation in comments</text>
+    </g>
+    
+    <!-- Developer assigns to bot -->
+    <g transform="translate(400, 220)">
+      <rect x="-150" y="-25" width="300" height="50" class="node" />
+      <text x="0" y="5" text-anchor="middle">Developer assigns issue to useful1 bot</text>
+    </g>
+    
+    <!-- Bot detects -->
+    <g transform="translate(400, 300)">
+      <rect x="-150" y="-25" width="300" height="50" class="node" />
+      <text x="0" y="5" text-anchor="middle">useful1 detects assigned issue</text>
+    </g>
+    
+    <!-- Bot reads context -->
+    <g transform="translate(400, 380)">
+      <rect x="-150" y="-25" width="300" height="50" class="node" />
+      <text x="0" y="5" text-anchor="middle">useful1 reads issue context and comments</text>
+    </g>
+    
+    <!-- Bot determines issue type -->
+    <g transform="translate(400, 460)">
+      <rect x="-150" y="-25" width="300" height="50" class="node" />
+      <text x="0" y="5" text-anchor="middle">useful1 determines issue type</text>
+    </g>
+    
+    <!-- Decision node -->
+    <g transform="translate(400, 540)">
+      <rect x="-100" y="-50" width="200" height="100" class="decision" />
+      <text x="0" y="5" text-anchor="middle">Issue type?</text>
+    </g>
+    
+    <!-- Branch creation nodes -->
+    <g transform="translate(200, 620)">
+      <rect x="-150" y="-25" width="300" height="50" class="node" />
+      <text x="0" y="5" text-anchor="middle">Create bugfix/useful1-123 branch</text>
+    </g>
+    
+    <g transform="translate(400, 620)">
+      <rect x="-150" y="-25" width="300" height="50" class="node" />
+      <text x="0" y="5" text-anchor="middle">Create chore/useful1-123 branch</text>
+    </g>
+    
+    <g transform="translate(600, 620)">
+      <rect x="-150" y="-25" width="300" height="50" class="node" />
+      <text x="0" y="5" text-anchor="middle">Create feature/useful1-123 branch</text>
+    </g>
+    
+    <!-- Implement fix -->
+    <g transform="translate(400, 700)">
+      <rect x="-150" y="-25" width="300" height="50" class="node" />
+      <text x="0" y="5" text-anchor="middle">Implement fix based on context</text>
+    </g>
+    
+    <!-- Commit changes -->
+    <g transform="translate(400, 780)">
+      <rect x="-150" y="-25" width="300" height="50" class="node" />
+      <text x="0" y="5" text-anchor="middle">Commit changes with detailed message</text>
+    </g>
+    
+    <!-- Create PR -->
+    <g transform="translate(400, 860)">
+      <rect x="-150" y="-25" width="300" height="50" class="node" />
+      <text x="0" y="5" text-anchor="middle">Create pull request to default branch</text>
+    </g>
+    
+    <!-- Tag developer -->
+    <g transform="translate(400, 940)">
+      <rect x="-150" y="-25" width="300" height="50" class="node" />
+      <text x="0" y="5" text-anchor="middle">Tag original developer for review</text>
+    </g>
+    
+    <!-- Comment on issue -->
+    <g transform="translate(400, 1020)">
+      <rect x="-150" y="-25" width="300" height="50" class="node" />
+      <text x="0" y="5" text-anchor="middle">Comment on issue with PR link</text>
+    </g>
+
+    <!-- Developer reviews PR -->
+    <g transform="translate(400, 1100)">
+      <rect x="-150" y="-25" width="300" height="50" class="node" />
+      <text x="0" y="5" text-anchor="middle">Developer reviews PR</text>
+    </g>
+
+    <!-- Decision node - PR approved? -->
+    <g transform="translate(400, 1180)">
+      <rect x="-100" y="-50" width="200" height="100" class="decision" />
+      <text x="0" y="5" text-anchor="middle">PR approved?</text>
+    </g>
+
+    <!-- Bot merges PR -->
+    <g transform="translate(200, 1260)">
+      <rect x="-150" y="-25" width="300" height="50" class="node" />
+      <text x="0" y="5" text-anchor="middle">useful1 merges PR</text>
+    </g>
+
+    <!-- Developer provides feedback -->
+    <g transform="translate(600, 1260)">
+      <rect x="-150" y="-25" width="300" height="50" class="node" />
+      <text x="0" y="5" text-anchor="middle">Developer provides feedback</text>
+    </g>
+
+    <!-- Bot updates PR -->
+    <g transform="translate(600, 1340)">
+      <rect x="-150" y="-25" width="300" height="50" class="node" />
+      <text x="0" y="5" text-anchor="middle">useful1 updates PR</text>
+    </g>
+
+    <!-- Issue closed -->
+    <g transform="translate(200, 1340)">
+      <rect x="-150" y="-25" width="300" height="50" class="node" />
+      <text x="0" y="5" text-anchor="middle">Issue closed automatically</text>
+    </g>
+    
+    <!-- Arrows -->
+    <!-- Main flow -->
+    <path d="M 400 85 L 400 115" class="arrow" />
+    <path d="M 400 165 L 400 195" class="arrow" />
+    <path d="M 400 245 L 400 275" class="arrow" />
+    <path d="M 400 325 L 400 355" class="arrow" />
+    <path d="M 400 405 L 400 435" class="arrow" />
+    <path d="M 400 485 L 400 490" class="arrow" />
+    
+    <!-- Decision outputs -->
+    <path d="M 320 540 L 200 595" class="arrow" />
+    <text x="240" y="560" class="arrow-text">Bug fix</text>
+    
+    <path d="M 400 590 L 400 595" class="arrow" />
+    <text x="400" y="560" class="arrow-text">Maintenance</text>
+    
+    <path d="M 480 540 L 600 595" class="arrow" />
+    <text x="560" y="560" class="arrow-text">Enhancement</text>
+    
+    <!-- Branch to implement -->
+    <path d="M 200 645 L 200 680 L 400 680" class="arrow" />
+    <path d="M 400 645 L 400 675" class="arrow" />
+    <path d="M 600 645 L 600 680 L 400 680" class="arrow" />
+    
+    <!-- Rest of flow -->
+    <path d="M 400 725 L 400 755" class="arrow" />
+    <path d="M 400 805 L 400 835" class="arrow" />
+    <path d="M 400 885 L 400 915" class="arrow" />
+    <path d="M 400 965 L 400 995" class="arrow" />
+    <path d="M 400 1045 L 400 1075" class="arrow" />
+    <path d="M 400 1125 L 400 1130" class="arrow" />
+
+    <!-- Decision outputs for PR approval -->
+    <path d="M 320 1180 L 200 1235" class="arrow" />
+    <text x="240" y="1200" class="arrow-text">Yes</text>
+    
+    <path d="M 480 1180 L 600 1235" class="arrow" />
+    <text x="560" y="1200" class="arrow-text">No</text>
+
+    <!-- Final connections -->
+    <path d="M 200 1285 L 200 1315" class="arrow" />
+    <path d="M 600 1285 L 600 1315" class="arrow" />
+    <path d="M 600 1365 L 600 1380 L 400 1380 L 400 1100 L 380 1100" class="arrow" stroke-dasharray="5,5" />
+  </g>
+</svg>
