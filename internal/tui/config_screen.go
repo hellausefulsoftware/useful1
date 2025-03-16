@@ -227,7 +227,7 @@ func (c *ConfigScreen) View() string {
 			resultStyle.Render(c.result) + "\n\n" +
 			theme.Faint.Render("Press ESC to go back")
 		
-		return lipgloss.NewStyle().Width(c.app.GetWidth()).Align(lipgloss.Center).Render(content)
+		return lipgloss.NewStyle().Width(c.app.GetWidth()).Align(lipgloss.Left).Render(content)
 	}
 	
 	// Normal input view

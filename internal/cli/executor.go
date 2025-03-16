@@ -30,6 +30,30 @@ func NewExecutor(cfg *config.Config) *Executor {
 	}
 }
 
+// formatErrorResponse formats an error into a JSON response for programmatic mode
+func (e *Executor) formatErrorResponse(err error, context map[string]interface{}) {
+	// Create error response
+	response := map[string]interface{}{
+		"status":    "error",
+		"message":   err.Error(),
+		"timestamp": time.Now().Format(time.RFC3339),
+	}
+	
+	// Add any additional context
+	for k, v := range context {
+		response[k] = v
+	}
+	
+	// Marshal and print
+	jsonResponse, jsonErr := json.Marshal(response)
+	if jsonErr == nil {
+		fmt.Println(string(jsonResponse))
+	} else {
+		// Fallback if JSON marshaling fails
+		fmt.Printf("{\"status\":\"error\",\"message\":\"%s\"}", err.Error())
+	}
+}
+
 // RespondToIssue executes the CLI tool to respond to a GitHub issue
 func (e *Executor) RespondToIssue(issueNumber string, templateName string) error {
 	// Parse issue number
@@ -57,12 +81,34 @@ func (e *Executor) RespondToIssue(issueNumber string, templateName string) error
 	repo := "default-repo"   // This would typically be parsed from a URL or config
 
 	// Post a comment to the issue with the result
-	return e.github.RespondToIssue(
+	err = e.github.RespondToIssue(
 		owner,
 		repo,
 		issueNum,
 		fmt.Sprintf("Automated response:\n\n```\n%s\n```", output),
 	)
+	
+	if err != nil {
+		return err
+	}
+	
+	// Output JSON for programmatic mode
+	response := map[string]interface{}{
+		"status": "success",
+		"issue_number": issueNum,
+		"owner": owner,
+		"repo": repo,
+		"template": templateName,
+		"response_length": len(output),
+	}
+	
+	jsonResponse, err := json.Marshal(response)
+	if err != nil {
+		return fmt.Errorf("error formatting JSON response: %w", err)
+	}
+	
+	fmt.Println(string(jsonResponse))
+	return nil
 }
 
 // RespondToIssueText processes issue text and responds using the CLI tool
@@ -146,7 +192,23 @@ func (e *Executor) RespondToIssueText(owner, repo string, issueNumber int, issue
 		return fmt.Errorf("failed to post response: %w", err)
 	}
 
-	fmt.Printf("Successfully responded to issue #%d\n", issueNumber)
+	// Output JSON for programmatic mode
+	responseObj := map[string]interface{}{
+		"status": "success",
+		"issue_number": issueNumber,
+		"owner": owner,
+		"repo": repo,
+		"response_length": len(response),
+		"timestamp": time.Now().Format(time.RFC3339),
+		"url": fmt.Sprintf("https://github.com/%s/%s/issues/%d", owner, repo, issueNumber),
+	}
+
+	jsonResponse, err := json.Marshal(responseObj)
+	if err != nil {
+		return fmt.Errorf("error formatting JSON response: %w", err)
+	}
+	
+	fmt.Println(string(jsonResponse))
 	return nil
 }
 
@@ -170,9 +232,34 @@ func (e *Executor) CreatePullRequest(branch, base, title string) error {
 		return err
 	}
 
-	fmt.Println("Pull request created successfully")
-	fmt.Println(output)
+	// Extract PR URL if available in output
+	prUrl := ""
+	for _, line := range strings.Split(output, "\n") {
+		if strings.Contains(line, "github.com") && strings.Contains(line, "/pull/") {
+			prUrl = strings.TrimSpace(line)
+			break
+		}
+	}
 
+	// Output JSON for programmatic mode
+	response := map[string]interface{}{
+		"status": "success",
+		"branch": branch,
+		"base": base,
+		"title": title,
+		"timestamp": time.Now().Format(time.RFC3339),
+	}
+
+	if prUrl != "" {
+		response["pr_url"] = prUrl
+	}
+
+	jsonResponse, err := json.Marshal(response)
+	if err != nil {
+		return fmt.Errorf("error formatting JSON response: %w", err)
+	}
+	
+	fmt.Println(string(jsonResponse))
 	return nil
 }
 
@@ -188,12 +275,70 @@ func (e *Executor) RunTests(testSuite string) error {
 	// Execute the CLI tool
 	output, err := e.executeWithPrompts(e.config.CLI.Command, args)
 	if err != nil {
+		// For test failures, we want to display the output but also return structured error
+		// Extract test summary if possible
+		failed := 0
+		passed := 0
+		skipped := 0
+		for _, line := range strings.Split(output, "\n") {
+			if strings.Contains(line, "failed") {
+				failed++
+			} else if strings.Contains(line, "passed") {
+				passed++
+			} else if strings.Contains(line, "skipped") {
+				skipped++
+			}
+		}
+		
+		// Output JSON for programmatic mode with error details
+		response := map[string]interface{}{
+			"status": "error",
+			"suite": testSuite,
+			"error": err.Error(),
+			"passed": passed,
+			"failed": failed,
+			"skipped": skipped,
+			"timestamp": time.Now().Format(time.RFC3339),
+		}
+		
+		jsonResponse, jsonErr := json.Marshal(response)
+		if jsonErr == nil {
+			fmt.Println(string(jsonResponse))
+		}
+		
 		return err
 	}
 
-	fmt.Println("Tests executed successfully")
-	fmt.Println(output)
+	// Extract test summary
+	failed := 0
+	passed := 0
+	skipped := 0
+	for _, line := range strings.Split(output, "\n") {
+		if strings.Contains(line, "failed") {
+			failed++
+		} else if strings.Contains(line, "passed") {
+			passed++
+		} else if strings.Contains(line, "skipped") {
+			skipped++
+		}
+	}
 
+	// Output JSON for programmatic mode
+	response := map[string]interface{}{
+		"status": "success",
+		"suite": testSuite,
+		"passed": passed,
+		"failed": failed,
+		"skipped": skipped,
+		"timestamp": time.Now().Format(time.RFC3339),
+	}
+
+	jsonResponse, err := json.Marshal(response)
+	if err != nil {
+		return fmt.Errorf("error formatting JSON response: %w", err)
+	}
+	
+	fmt.Println(string(jsonResponse))
 	return nil
 }
 

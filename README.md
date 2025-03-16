@@ -224,6 +224,45 @@ Where `123` is the issue number and `--implement` flag triggers the fix implemen
 ./bin/useful1 test integration
 ```
 
+### Programmatic Mode
+
+For integration with scripts or other programs, useful1 supports a programmatic mode that outputs machine-readable JSON:
+
+```bash
+# Get response for an issue in JSON format
+./bin/useful1 --programmatic respond --issue 123 --owner myorg --repo myrepo
+
+# Create a PR with structured output
+./bin/useful1 --programmatic pr --branch feature-branch --base main --title "New feature"
+
+# Run tests with structured results
+./bin/useful1 --programmatic test --suite integration
+```
+
+The programmatic mode returns structured JSON responses:
+
+```json
+{
+  "status": "success",
+  "issue_number": 123,
+  "owner": "myorg",
+  "repo": "myrepo",
+  "response_length": 1423,
+  "timestamp": "2025-03-15T14:32:45Z",
+  "url": "https://github.com/myorg/myrepo/issues/123"
+}
+```
+
+Error responses follow a consistent format:
+
+```json
+{
+  "status": "error",
+  "message": "Error message details",
+  "timestamp": "2025-03-15T14:32:45Z"
+}
+```
+
 ## Technical Implementation
 
 ### Issue Resolution Workflow

@@ -42,6 +42,7 @@ type ColorblindFriendlyTheme struct {
 }
 
 // NewTheme creates a new colorblind-friendly theme
+// With colors optimized for both light and dark terminals
 func NewTheme() *ColorblindFriendlyTheme {
 	t := &ColorblindFriendlyTheme{
 		// Primary colors - colorblind friendly palette
@@ -63,36 +64,36 @@ func NewTheme() *ColorblindFriendlyTheme {
 		BorderColor: "#56B4E9", // Light blue
 	}
 	
-	// Initialize styles
+	// Initialize styles with high contrast colors for dark terminals
 	t.Title = lipgloss.NewStyle().
 		Bold(true).
-		Foreground(lipgloss.Color(t.Blue)).
+		Foreground(lipgloss.Color(t.LightBlue)).
 		MarginBottom(1)
 		
 	t.Subtitle = lipgloss.NewStyle().
-		Foreground(lipgloss.Color(t.DarkBlue)).
+		Foreground(lipgloss.Color(t.Yellow)).
 		MarginBottom(1)
 		
 	t.Text = lipgloss.NewStyle().
-		Foreground(lipgloss.Color(t.Black))
+		Foreground(lipgloss.Color("#dedede")) // Light gray for text
 		
 	t.Bold = lipgloss.NewStyle().
 		Bold(true).
-		Foreground(lipgloss.Color(t.Black))
+		Foreground(lipgloss.Color("#ffffff")) // White for bold text
 		
 	t.Faint = lipgloss.NewStyle().
 		Faint(true).
-		Foreground(lipgloss.Color(t.Default))
+		Foreground(lipgloss.Color("#bbbbbb")) // Light gray for faint text
 	
-	// Component styles
+	// Component styles with better dark-mode contrast
 	t.SelectedItem = lipgloss.NewStyle().
 		Bold(true).
-		Background(lipgloss.Color(t.LightBlue)).
+		Background(lipgloss.Color(t.Blue)).
 		Foreground(lipgloss.Color(t.White)).
 		Padding(0, 1)
 		
 	t.UnselectedItem = lipgloss.NewStyle().
-		Foreground(lipgloss.Color(t.Black)).
+		Foreground(lipgloss.Color("#dedede")). // Light gray for unselected items
 		Padding(0, 1)
 		
 	t.ActiveTab = lipgloss.NewStyle().
@@ -102,8 +103,8 @@ func NewTheme() *ColorblindFriendlyTheme {
 		Padding(0, 3)
 		
 	t.InactiveTab = lipgloss.NewStyle().
-		Foreground(lipgloss.Color(t.Black)).
-		Background(lipgloss.Color(t.Default)).
+		Foreground(lipgloss.Color("#dedede")). // Light gray
+		Background(lipgloss.Color("#555555")). // Medium gray background
 		Padding(0, 3)
 		
 	t.Button = lipgloss.NewStyle().

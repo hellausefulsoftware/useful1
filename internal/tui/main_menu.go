@@ -75,15 +75,9 @@ func (m *MainMenuScreen) View() string {
 	// Render title
 	s := m.RenderTitle() + "\n\n"
 	
-	// Render logo
-	logo := `
- _   _  ___  ___  ___ _   _ _    _ 
-| | | |/ __|/ _ \/ __| | | | |  | |
-| |_| |\__ \  __/\__ \ |_| | |  | |
- \__,_||___/\___||___/\__,_|_|  |_|
-`
-	infoStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(theme.Info))
-	s += infoStyle.Render(logo) + "\n\n"
+	// Header with app name and version
+	headerStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(theme.LightBlue)).Bold(true)
+	s += headerStyle.Render("Useful1 Automation Tool") + "\n\n"
 	
 	// Check if config exists
 	if m.app.GetConfig() == nil {
@@ -110,8 +104,8 @@ func (m *MainMenuScreen) View() string {
 	// Add empty line and footer
 	s += "\n" + m.RenderFooter()
 	
-	// Center in terminal
-	return lipgloss.NewStyle().Width(m.app.GetWidth()).Align(lipgloss.Center).Render(s)
+	// Left-align in terminal
+	return lipgloss.NewStyle().Width(m.app.GetWidth()).Align(lipgloss.Left).Render(s)
 }
 
 // ShortHelp returns keybindings to be shown in the help menu

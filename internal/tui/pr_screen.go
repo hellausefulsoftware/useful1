@@ -165,7 +165,7 @@ func (p *PRScreen) View() string {
 			resultStyle.Render(p.result) + "\n\n" +
 			theme.Faint.Render("Press ESC to go back")
 		
-		return lipgloss.NewStyle().Width(p.app.GetWidth()).Align(lipgloss.Center).Render(content)
+		return lipgloss.NewStyle().Width(p.app.GetWidth()).Align(lipgloss.Left).Render(content)
 	}
 	
 	// Normal input view
@@ -201,7 +201,7 @@ func (p *PRScreen) View() string {
 	// Footer
 	content += p.RenderFooter()
 	
-	return lipgloss.NewStyle().Width(p.app.GetWidth()).Align(lipgloss.Center).Render(content)
+	return lipgloss.NewStyle().Width(p.app.GetWidth()).Align(lipgloss.Left).Render(content)
 }
 
 // ShortHelp returns keybindings to be shown in the help menu

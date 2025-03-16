@@ -197,7 +197,8 @@ func (m *MonitorScreen) View() string {
 	// Footer
 	content += m.RenderFooter()
 	
-	return content
+	// Left-align in terminal
+	return lipgloss.NewStyle().Width(m.app.GetWidth()).Align(lipgloss.Left).Render(content)
 }
 
 // ShortHelp returns keybindings to be shown in the help menu

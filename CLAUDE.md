@@ -3,11 +3,18 @@
 ## Build & Test Commands
 - Build: `make build`
 - Run: `make run`
+- Run with programmatic output: `./bin/useful1 --programmatic [command]`
 - Test all: `make test`
 - Test single: `go test -v ./path/to/package -run TestName`
 - Coverage: `make test-coverage`
 - Lint: `make lint`
 - Format: `make fmt`
+
+## Command Usage
+- Respond to issue: `./bin/useful1 --programmatic respond --issue [number] --owner [owner] --repo [repo]`
+- Create PR: `./bin/useful1 --programmatic pr --branch [branch] --base [base-branch] --title "[title]"`
+- Run tests: `./bin/useful1 --programmatic test --suite [suite-name]`
+- Monitor: `./bin/useful1 --programmatic monitor --repo [owner/repo]`
 
 ## Code Style
 - **Variables**: Use clear variable names which explain the purpose of the variable
