@@ -202,6 +202,12 @@ For a one-time check:
 ./bin/useful1 monitor --once
 ```
 
+You can specify a specific repository to monitor:
+
+```bash
+./bin/useful1 monitor --repo owner/repo --once
+```
+
 ### Manual Issue Processing
 
 Process a specific issue:
@@ -224,22 +230,34 @@ Where `123` is the issue number and `--implement` flag triggers the fix implemen
 ./bin/useful1 test integration
 ```
 
-### Programmatic Mode
+### Command-Line Interface
 
-For integration with scripts or other programs, useful1 supports a programmatic mode that outputs machine-readable JSON:
+The default mode is CLI with structured JSON output, making it suitable for integration with scripts or other programs:
 
 ```bash
 # Get response for an issue in JSON format
-./bin/useful1 --programmatic respond --issue 123 --owner myorg --repo myrepo
+./bin/useful1 respond --issue 123 --owner myorg --repo myrepo
 
 # Create a PR with structured output
-./bin/useful1 --programmatic pr --branch feature-branch --base main --title "New feature"
+./bin/useful1 pr --branch feature-branch --base main --title "New feature"
 
 # Run tests with structured results
-./bin/useful1 --programmatic test --suite integration
+./bin/useful1 test --suite integration
 ```
 
-The programmatic mode returns structured JSON responses:
+### Terminal User Interface (TUI)
+
+For interactive usage, you can enable the TUI with the `--tui` flag:
+
+```bash
+# Launch the TUI
+./bin/useful1 --tui
+
+# Go directly to the respond screen in TUI
+./bin/useful1 --tui respond
+```
+
+The CLI mode returns structured JSON responses:
 
 ```json
 {

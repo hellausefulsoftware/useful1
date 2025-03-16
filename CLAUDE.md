@@ -3,7 +3,8 @@
 ## Build & Test Commands
 - Build: `make build`
 - Run: `make run` 
-- Run: `./bin/useful1 --programmatic [command]`
+- Run: `./bin/useful1 [command]`
+- Run TUI mode: `./bin/useful1 --tui [command]`
 - Test all: `make test`
 - Test single: `go test -v ./path/to/package -run TestName`
 - Coverage: `make test-coverage`
@@ -16,10 +17,17 @@
 - Get exact context for editing: `rg -A 3 -B 3 "pattern" file.go`
 
 ## Command Usage
-- Respond to issue: `./bin/useful1 --programmatic respond --issue [number] --owner [owner] --repo [repo]`
-- Create PR: `./bin/useful1 --programmatic pr --branch [branch] --base [base-branch] --title "[title]"`
-- Run tests: `./bin/useful1 --programmatic test --suite [suite-name]`
-- Monitor: `./bin/useful1 --programmatic monitor --repo [owner/repo]`
+- Respond to issue: `./bin/useful1 respond --issue [number] --owner [owner] --repo [repo]`
+- Create PR: `./bin/useful1 pr --branch [branch] --base [base-branch] --title "[title]"`
+- Run tests: `./bin/useful1 test --suite [suite-name]`
+
+### GitHub Monitoring Commands
+- Monitor with CLI (default): `./bin/useful1 monitor --repo [owner/repo] --interval [seconds]` (default: 60 seconds)
+- Run once: `./bin/useful1 monitor --repo [owner/repo] --once`
+- Monitor with TUI: `./bin/useful1 --tui monitor --repo [owner/repo] --interval [seconds]` (default: 60 seconds)
+  - Press 'q' to exit the TUI
+- Run with debug logs: `./bin/useful1 --log-level debug monitor --repo [owner/repo]`
+- Enable auto-respond: `./bin/useful1 monitor --repo [owner/repo] --auto-respond`
 
 ## Code Style
 - **Variables**: Use clear variable names which explain the purpose of the variable

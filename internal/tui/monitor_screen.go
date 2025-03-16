@@ -8,7 +8,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/spinner"
-	"github.com/charmbracelet/bubbletea"
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/hellausefulsoftware/useful1/internal/cli"
 	"github.com/hellausefulsoftware/useful1/internal/github"
@@ -360,7 +360,6 @@ func (m *MonitorScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.running && !m.runOnce {
 			now := time.Now()
 			if now.After(m.nextPoll) {
-				m.logs = append(m.logs, "Polling for new issues...")
 				return m, m.checkIssues()
 			}
 			return m, m.scheduleNextPoll()
@@ -388,11 +387,16 @@ func (m *MonitorScreen) View() string {
 			content += theme.Subtitle.Render("Select Repositories:") + "\n\n"
 
 			// Display repository list with checkbox selection
+			// Calculate a reasonable width for the repo list box
+			// Use the same approach as for the log section
+			screenWidth := m.app.GetWidth()
+			repoWidth := min(80, max(60, int(float64(screenWidth)*0.8)))
+			
 			repoListStyle := lipgloss.NewStyle().
 				BorderStyle(lipgloss.RoundedBorder()).
 				BorderForeground(lipgloss.Color(theme.BorderColor)).
 				Padding(1).
-				Width(m.app.GetWidth() - 4)
+				Width(repoWidth)
 
 			var repoList strings.Builder
 
@@ -541,11 +545,17 @@ func (m *MonitorScreen) View() string {
 	}
 
 	logContent := strings.Join(displayLogs, "\n")
+	// Calculate a reasonable width for the log box
+	// On smaller screens, use a percentage of the screen width
+	// On larger screens, cap at a reasonable width to prevent long lines
+	screenWidth := m.app.GetWidth()
+	logWidth := min(80, max(60, int(float64(screenWidth)*0.8)))
+	
 	logStyle := lipgloss.NewStyle().
 		BorderStyle(lipgloss.RoundedBorder()).
 		BorderForeground(lipgloss.Color(theme.BorderColor)).
 		Padding(1).
-		Width(m.app.GetWidth() - 4) // Account for padding and border
+		Width(logWidth)
 
 	content += logStyle.Render(logContent) + "\n\n"
 
@@ -639,13 +649,17 @@ func (m *MonitorScreen) checkIssues() tea.Cmd {
 		}
 		logging.Initialize(origLogConfig)
 
-		// Add captured logs
-		logs = append(logs, logCapture.GetImportantLogs()...)
+		// Add captured logs - get all important logs plus debug logs at higher verbosity
+		capturedLogs := logCapture.GetImportantLogs()
+		if len(capturedLogs) == 0 {
+			// If no important logs were captured, add a general status message
+			logs = append(logs, "GitHub check completed - no significant updates to report")
+		} else {
+			logs = append(logs, capturedLogs...)
+		}
 
 		if err != nil {
 			logs = append(logs, "Error checking issues: "+err.Error())
-		} else {
-			logs = append(logs, "Successfully checked for issues")
 		}
 
 		return monitorResultMsg{
@@ -689,9 +703,16 @@ func (lc *logCapture) GetImportantLogs() []string {
 
 	var important []string
 	for _, line := range lc.lines {
-		// Check for important log messages to capture
+		// Check for important log messages to capture - now including PR-related messages
 		shouldCapture := strings.Contains(line, "Issues summary") ||
-			strings.Contains(line, "Waiting before next check")
+			strings.Contains(line, "Waiting before next check") ||
+			strings.Contains(line, "draft PR") ||
+			strings.Contains(line, "pull request") ||
+			strings.Contains(line, "PR") ||
+			strings.Contains(line, "branch") ||
+			strings.Contains(line, "Issue") ||
+			strings.Contains(line, "monitoring") ||
+			strings.Contains(line, "Checking")
 
 		if shouldCapture {
 			// Clean up the log line (remove timestamp, level, etc.)

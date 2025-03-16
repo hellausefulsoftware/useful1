@@ -16,7 +16,7 @@ type Issue struct {
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
 	Comments     []*IssueComment
-	MentionsUser bool
+	// No need for reference tracking - we only care about assignment
 	URL          string
 	Labels       []string
 	Assignees    []string

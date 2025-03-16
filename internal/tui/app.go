@@ -93,10 +93,10 @@ func NewApp(cfg *config.Config) *App {
 	helpModel.Styles.FullDesc = theme.Text
 	helpModel.Styles.FullSeparator = theme.Faint
 
-	// Initialize logging config if it doesn't exist
-	if cfg != nil && cfg.Logging.Output == nil {
-		// Only initialize logger when in TUI mode if output field is not set
-		writer := os.Stdout // Use the imported os package
+	// Always set logging output to stderr in TUI mode to prevent breaking the interface
+	if cfg != nil {
+		// Always direct logs to stderr in TUI mode
+		writer := os.Stderr
 		cfg.Logging.Output = writer
 		cfg.Logging.Level = "info"
 		cfg.Logging.JSONFormat = false

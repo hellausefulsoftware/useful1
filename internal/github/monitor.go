@@ -77,7 +77,7 @@ func (m *Monitor) Start() error {
 
 	// Loop indefinitely, checking for new issues
 	for {
-		if err := m.checkForMentions(); err != nil {
+		if err := m.checkForAssignedIssues(); err != nil {
 			logging.Error("Failed to check for assigned issues", "error", err)
 		}
 
@@ -111,7 +111,7 @@ func (m *Monitor) CheckOnce() error {
 		logging.Info("Checking all accessible repositories")
 	}
 
-	err := m.checkForMentions()
+	err := m.checkForAssignedIssues()
 
 	if err != nil {
 		logging.Error("Check failed", "error", err)
@@ -122,12 +122,13 @@ func (m *Monitor) CheckOnce() error {
 	return nil
 }
 
-// checkForMentions checks for open issues where the user is assigned
-func (m *Monitor) checkForMentions() error {
+// checkForAssignedIssues checks for open issues where the user is assigned
+func (m *Monitor) checkForAssignedIssues() error {
 	// Log the username we're checking for
 	logging.Info("Checking for issues assigned to user", "username", m.username)
 
 	// Only search for open issues assigned to the user
+	// We use a broader search here since we'll be creating draft PRs for all assigned issues
 	query := fmt.Sprintf("assignee:%s updated:>%s is:issue is:open",
 		m.username,
 		m.lastChecked.Format(time.RFC3339),
@@ -344,10 +345,7 @@ func (m *Monitor) getIssueWithComments(owner, repo string, number int) (*models.
 		}
 	}
 
-	// Check if the user is mentioned in the issue body
-	if strings.Contains(strings.ToLower(*issue.Body), strings.ToLower("@"+m.username)) {
-		result.MentionsUser = true
-	}
+	// This issue is assigned to the user, which is all we care about
 
 	// Get comments
 	comments, _, err := m.client.Issues.ListComments(
@@ -377,10 +375,7 @@ func (m *Monitor) getIssueWithComments(owner, repo string, number int) (*models.
 			CreatedAt: *comment.CreatedAt,
 		})
 
-		// Check if the user is mentioned in the comment
-		if strings.Contains(strings.ToLower(*comment.Body), strings.ToLower("@"+m.username)) {
-			result.MentionsUser = true
-		}
+		// We'll collect all comments but no need to check for references
 	}
 
 	return result, nil
@@ -415,19 +410,30 @@ func (m *Monitor) processIssue(issue *models.Issue) error {
 		}
 	}
 
-	// Check if we need to respond to this issue
-	if !issue.MentionsUser {
-		logging.Info("No direct mention found, skipping")
-		return nil
-	}
-
 	// Check if the issue is already closed
 	if strings.ToLower(issue.State) == "closed" {
 		logging.Info("Issue is closed, skipping")
 		return nil
 	}
 
-	logging.Info("Mention found, preparing response")
+	// Check if we've already created a draft PR for this issue
+	if hasDraftPR, err := m.hasDraftPullRequest(issue.Owner, issue.Repo, issue.Number); err != nil {
+		logging.Warn("Failed to check for existing draft PRs", "error", err)
+	} else if hasDraftPR {
+		logging.Info("Issue already has a draft PR, skipping")
+		return nil
+	}
+
+	// Create a draft PR for this issue
+	if err := m.createDraftPullRequest(issue); err != nil {
+		logging.Warn("Failed to create draft PR", "error", err)
+		// Continue processing even if draft PR creation fails
+	} else {
+		logging.Info("Created draft PR for issue", "number", issue.Number)
+	}
+
+	// For assigned issues, we'll always add a comment with our response
+	logging.Info("Issue is assigned to user, preparing response")
 
 	// Check if the last comment was from the bot
 	if len(issue.Comments) > 0 && issue.Comments[len(issue.Comments)-1].User == m.username {
@@ -460,8 +466,8 @@ func (m *Monitor) processIssue(issue *models.Issue) error {
 		issueText += "\n"
 	}
 
-	// Add special instruction for the most recent mention
-	issueText += "\n\nPlease focus on responding to the most recent mention of your username in this issue."
+	// Add special instruction for the response
+	issueText += "\n\nPlease focus on responding to the assigned issue based on the most recent comments and activity."
 
 	// Use the issue responder to generate a response
 	err := m.responder.RespondToIssueText(
@@ -482,6 +488,7 @@ func (m *Monitor) processIssue(issue *models.Issue) error {
 // GetRecentAssignedIssues gets the most recent assigned issues for reporting
 func (m *Monitor) GetRecentAssignedIssues(limit int) ([]*models.Issue, error) {
 	// Search for recent open issues assigned to the user
+	// We only want issues that are assigned to us
 	query := fmt.Sprintf("assignee:%s updated:>%s is:issue is:open",
 		m.username,
 		time.Now().Add(-7*24*time.Hour).Format(time.RFC3339), // Last 7 days
@@ -575,6 +582,129 @@ func (m *Monitor) GetRecentAssignedIssues(limit int) ([]*models.Issue, error) {
 	return issues, nil
 }
 
+// hasDraftPullRequest checks if there's already a draft PR for this issue
+func (m *Monitor) hasDraftPullRequest(owner, repo string, issueNumber int) (bool, error) {
+	// Create a client for checking pull requests
+	client := NewClient(m.config.GitHub.Token)
+	
+	logging.Info("Checking for existing draft PRs", 
+		"issue", issueNumber, 
+		"owner", owner, 
+		"repo", repo)
+	
+	// Get all PRs that reference this issue
+	prs, err := client.GetPullRequestsForIssue(owner, repo, issueNumber)
+	if err != nil {
+		logging.Warn("Error getting PRs for issue", 
+			"issue", issueNumber, 
+			"error", err)
+		return false, fmt.Errorf("failed to get pull requests for issue: %w", err)
+	}
+	
+	logging.Info("Found PRs referencing issue", 
+		"issue", issueNumber, 
+		"count", len(prs))
+	
+	// Check if any of these PRs are drafts created by our user
+	for _, pr := range prs {
+		logging.Info("Examining PR", 
+			"number", pr.GetNumber(), 
+			"title", pr.GetTitle(), 
+			"draft", pr.GetDraft(),
+			"user", pr.GetUser().GetLogin())
+		
+		if pr.GetDraft() && pr.GetUser().GetLogin() == m.username {
+			logging.Info("Found existing draft PR", 
+				"number", pr.GetNumber(),
+				"title", pr.GetTitle(),
+				"url", pr.GetHTMLURL())
+			return true, nil
+		}
+	}
+	
+	logging.Info("No existing draft PRs found for issue", "issue", issueNumber)
+	return false, nil
+}
+
+// createDraftPullRequest creates a new draft PR for the issue
+func (m *Monitor) createDraftPullRequest(issue *models.Issue) error {
+	// Create a client for creating pull requests
+	client := NewClient(m.config.GitHub.Token)
+	
+	// Prepare branch name based on issue number and title
+	// Sanitize the title for use in a branch name
+	sanitizedTitle := strings.ToLower(issue.Title)
+	sanitizedTitle = strings.ReplaceAll(sanitizedTitle, " ", "-")
+	sanitizedTitle = strings.ReplaceAll(sanitizedTitle, "/", "-")
+	sanitizedTitle = strings.ReplaceAll(sanitizedTitle, ":", "")
+	sanitizedTitle = strings.ReplaceAll(sanitizedTitle, ".", "")
+	sanitizedTitle = strings.ReplaceAll(sanitizedTitle, ",", "")
+	
+	// Limit branch name length
+	if len(sanitizedTitle) > 50 {
+		sanitizedTitle = sanitizedTitle[:50]
+	}
+	
+	branchName := fmt.Sprintf("issue-%d-%s", issue.Number, sanitizedTitle)
+	logging.Info("Preparing to create branch for issue", 
+		"issue_number", issue.Number, 
+		"branch", branchName,
+		"owner", issue.Owner,
+		"repo", issue.Repo)
+	
+	// Get the default branch for the repository (usually 'main' or 'master')
+	defaultBranch := "main" // Default fallback
+	
+	// Try to get repo info to determine default branch
+	repoInfo, _, err := client.client.Repositories.Get(context.Background(), issue.Owner, issue.Repo)
+	if err != nil {
+		logging.Warn("Failed to get repository info", "error", err)
+	} else if repoInfo.GetDefaultBranch() != "" {
+		defaultBranch = repoInfo.GetDefaultBranch()
+		logging.Info("Using repository default branch", "branch", defaultBranch)
+	}
+	
+	// Try to create the branch
+	logging.Info("Creating branch", "branch", branchName, "from", defaultBranch)
+	err = client.CreateBranch(issue.Owner, issue.Repo, branchName, defaultBranch)
+	if err != nil {
+		return fmt.Errorf("failed to create branch: %w", err)
+	}
+	
+	// Prepare PR title and body
+	prTitle := fmt.Sprintf("Draft: Fix for issue #%d - %s", issue.Number, issue.Title)
+	prBody := fmt.Sprintf("This is an automatically generated draft PR for issue #%d.\n\n", issue.Number)
+	prBody += fmt.Sprintf("## Issue\n[%s](%s)\n\n", issue.Title, issue.URL)
+	prBody += "## Description\n"
+	prBody += "This PR was automatically created to track progress on the linked issue.\n\n"
+	prBody += "## TODO\n- [ ] Implement solution\n- [ ] Add tests\n- [ ] Update documentation\n"
+	
+	logging.Info("Creating draft PR", 
+		"title", prTitle, 
+		"head", branchName, 
+		"base", defaultBranch)
+	
+	// Create the draft PR
+	pr, err := client.CreateDraftPullRequest(
+		issue.Owner,
+		issue.Repo,
+		prTitle,
+		prBody,
+		branchName,
+		defaultBranch,
+	)
+	
+	if err != nil {
+		return fmt.Errorf("failed to create draft PR: %w", err)
+	}
+	
+	logging.Info("Successfully created draft PR", 
+		"pr_number", pr.GetNumber(),
+		"url", pr.GetHTMLURL())
+	
+	return nil
+}
+
 // GetStats returns monitoring statistics
 func (m *Monitor) GetStats() map[string]interface{} {
 	m.mutex.Lock()
@@ -590,4 +720,9 @@ func (m *Monitor) GetStats() map[string]interface{} {
 	}
 
 	return stats
+}
+
+// GetUsername returns the GitHub username being used for monitoring
+func (m *Monitor) GetUsername() string {
+	return m.username
 }

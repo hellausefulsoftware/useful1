@@ -35,7 +35,7 @@ func (e *Executor) GetGitHubClient() *github.Client {
 	return e.github
 }
 
-// formatErrorResponse formats an error into a JSON response for programmatic mode
+// formatErrorResponse formats an error into a JSON response
 func (e *Executor) formatErrorResponse(err error, context map[string]interface{}) {
 	// Create error response
 	response := map[string]interface{}{
@@ -98,7 +98,7 @@ func (e *Executor) RespondToIssue(issueNumber string, templateName string) error
 		return err
 	}
 
-	// Output JSON for programmatic mode
+	// Output JSON response
 	response := map[string]interface{}{
 		"status":          "success",
 		"issue_number":    issueNum,
@@ -206,7 +206,7 @@ func (e *Executor) RespondToIssueText(owner, repo string, issueNumber int, issue
 		return fmt.Errorf("failed to post response: %w", postErr)
 	}
 
-	// Output JSON for programmatic mode
+	// Output JSON response
 	responseObj := map[string]interface{}{
 		"status":          "success",
 		"issue_number":    issueNumber,
@@ -255,7 +255,7 @@ func (e *Executor) CreatePullRequest(branch, base, title string) error {
 		}
 	}
 
-	// Output JSON for programmatic mode
+	// Output JSON response
 	response := map[string]interface{}{
 		"status":    "success",
 		"branch":    branch,
@@ -304,7 +304,7 @@ func (e *Executor) RunTests(testSuite string) error {
 			}
 		}
 
-		// Output JSON for programmatic mode with error details
+		// Output JSON response with error details
 		response := map[string]interface{}{
 			"status":    "error",
 			"suite":     testSuite,
@@ -337,7 +337,7 @@ func (e *Executor) RunTests(testSuite string) error {
 		}
 	}
 
-	// Output JSON for programmatic mode
+	// Output JSON response
 	response := map[string]interface{}{
 		"status":    "success",
 		"suite":     testSuite,
