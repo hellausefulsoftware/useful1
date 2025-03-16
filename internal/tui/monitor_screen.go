@@ -411,6 +411,27 @@ func (m *MonitorScreen) View() string {
 				endIdx = len(m.repositories)
 			}
 
+			// Add "Select All" option at the top
+			selectAllText := "Select All"
+			if m.selectAllRepos {
+				selectAllText = "Deselect All"
+			}
+
+			cursor := " "
+			checkbox := "[ ]"
+			textStyle := theme.UnselectedItem
+
+			if m.selectAllRepos {
+				checkbox = "[×]"
+			}
+
+			if m.cursor == len(m.repositories) {
+				cursor = ">"
+				textStyle = theme.SelectedItem
+			}
+
+			repoList.WriteString(fmt.Sprintf("%s %s %s\n\n", cursor, checkbox, textStyle.Render(selectAllText)))
+
 			// Display selected repositories
 			for i := startIdx; i < endIdx; i++ {
 				repo := m.repositories[i]
@@ -440,27 +461,6 @@ func (m *MonitorScreen) View() string {
 
 				repoList.WriteString(line + "\n")
 			}
-
-			// Add "Select All" option
-			selectAllText := "Select All"
-			if m.selectAllRepos {
-				selectAllText = "Deselect All"
-			}
-
-			cursor := " "
-			checkbox := "[ ]"
-			textStyle := theme.UnselectedItem
-
-			if m.selectAllRepos {
-				checkbox = "[×]"
-			}
-
-			if m.cursor == len(m.repositories) {
-				cursor = ">"
-				textStyle = theme.SelectedItem
-			}
-
-			repoList.WriteString(fmt.Sprintf("%s %s %s\n", cursor, checkbox, textStyle.Render(selectAllText)))
 
 			// Display pagination info if needed
 			if len(m.repositories) > maxReposToShow {
