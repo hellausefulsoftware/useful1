@@ -6,20 +6,20 @@ import (
 
 // Issue represents a GitHub issue with all relevant data
 type Issue struct {
-	Owner        string
-	Repo         string
-	Number       int
-	Title        string
-	Body         string
-	User         string
-	State        string
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
-	Comments     []*IssueComment
+	Owner     string
+	Repo      string
+	Number    int
+	Title     string
+	Body      string
+	User      string
+	State     string
+	CreatedAt time.Time
+	UpdatedAt time.Time
+	Comments  []*IssueComment
 	// No need for reference tracking - we only care about assignment
-	URL          string
-	Labels       []string
-	Assignees    []string
+	URL       string
+	Labels    []string
+	Assignees []string
 }
 
 // IssueComment represents a comment on a GitHub issue

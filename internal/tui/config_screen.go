@@ -448,7 +448,7 @@ func (c *ConfigScreen) View() string {
 		if c.inMenuSelection && i == c.selectedMenuItem {
 			menuStyle = focusedStyle
 		}
-		content += menuStyle.Render("• "+item) + "\n"
+		content += menuStyle.Render(item) + "\n"
 	}
 	content += "\n"
 
@@ -459,79 +459,79 @@ func (c *ConfigScreen) View() string {
 	content += theme.Bold.Render("Authentication:") + "\n\n"
 
 	// GitHub token
-	githubLabel := normalStyle.Render("GitHub Token: ")
+	githubLabel := normalStyle.Render("GitHub Token")
 	if c.focusedInput == fieldGitHubToken {
-		githubLabel = focusedStyle.Render("GitHub Token: ")
+		githubLabel = focusedStyle.Render("GitHub Token")
 	}
-	content += githubLabel + c.githubTokenInput.View() + "\n\n"
+	content += githubLabel + "\n" + c.githubTokenInput.View() + "\n\n"
 
 	// GitHub username
-	usernameLabel := normalStyle.Render("GitHub Username: ")
+	usernameLabel := normalStyle.Render("GitHub Username")
 	if c.focusedInput == fieldGitHubUsername {
-		usernameLabel = focusedStyle.Render("GitHub Username: ")
+		usernameLabel = focusedStyle.Render("GitHub Username")
 	}
-	content += usernameLabel + c.githubUsernameInput.View() + "\n" +
-		theme.Faint.Render("    Required for monitoring assigned issues") + "\n\n"
+	content += usernameLabel + "\n" + c.githubUsernameInput.View() + "\n" +
+		theme.Faint.Render("Required for monitoring assigned issues") + "\n\n"
 
 	// Anthropic token
-	anthropicLabel := normalStyle.Render("Anthropic API Key: ")
+	anthropicLabel := normalStyle.Render("Anthropic API Key")
 	if c.focusedInput == fieldAnthropicToken {
-		anthropicLabel = focusedStyle.Render("Anthropic API Key: ")
+		anthropicLabel = focusedStyle.Render("Anthropic API Key")
 	}
-	content += anthropicLabel + c.anthropicTokenInput.View() + "\n\n"
+	content += anthropicLabel + "\n" + c.anthropicTokenInput.View() + "\n\n"
 
 	// CLI section
 	content += theme.Bold.Render("CLI Command:") + "\n\n"
 
 	// CLI command
-	cliLabel := normalStyle.Render("CLI Command: ")
+	cliLabel := normalStyle.Render("CLI Command")
 	if c.focusedInput == fieldCLICommand {
-		cliLabel = focusedStyle.Render("CLI Command: ")
+		cliLabel = focusedStyle.Render("CLI Command")
 	}
-	content += cliLabel + c.cliCommandInput.View() + "\n" +
-		theme.Faint.Render("    Enter command with arguments (default: claude --dangerously-skip-permissions)") + "\n\n"
+	content += cliLabel + "\n" + c.cliCommandInput.View() + "\n" +
+		theme.Faint.Render("Enter command with arguments (default: claude --dangerously-skip-permissions)") + "\n\n"
 
 	// Monitor Settings section
 	content += theme.Bold.Render("Monitor Settings:") + "\n\n"
 
 	// Poll interval
-	intervalLabel := normalStyle.Render("Poll Interval (seconds): ")
+	intervalLabel := normalStyle.Render("Poll Interval (seconds)")
 	if c.focusedInput == fieldMonitorInterval {
-		intervalLabel = focusedStyle.Render("Poll Interval (seconds): ")
+		intervalLabel = focusedStyle.Render("Poll Interval (seconds)")
 	}
-	content += intervalLabel + c.monitorIntervalInput.View() + "\n" +
-		theme.Faint.Render("    How often to check for new issues (default: 60 seconds)") + "\n\n"
+	content += intervalLabel + "\n" + c.monitorIntervalInput.View() + "\n" +
+		theme.Faint.Render("How often to check for new issues (default: 60 seconds)") + "\n\n"
 
 	// Budgets section
 	content += theme.Bold.Render("Budgets:") + "\n\n"
 
 	// Issue response budget
-	issueLabel := normalStyle.Render("Issue Response Budget: ")
+	issueLabel := normalStyle.Render("Issue Response Budget")
 	if c.focusedInput == fieldIssueResponseBudget {
-		issueLabel = focusedStyle.Render("Issue Response Budget: ")
+		issueLabel = focusedStyle.Render("Issue Response Budget")
 	}
-	content += issueLabel + c.issueResponseBudgetInput.View() + "\n\n"
+	content += issueLabel + "\n" + c.issueResponseBudgetInput.View() + "\n\n"
 
 	// PR budget
-	prLabel := normalStyle.Render("PR Creation Budget: ")
+	prLabel := normalStyle.Render("PR Creation Budget")
 	if c.focusedInput == fieldPRBudget {
-		prLabel = focusedStyle.Render("PR Creation Budget: ")
+		prLabel = focusedStyle.Render("PR Creation Budget")
 	}
-	content += prLabel + c.prBudgetInput.View() + "\n\n"
+	content += prLabel + "\n" + c.prBudgetInput.View() + "\n\n"
 
 	// Test budget
-	testLabel := normalStyle.Render("Test Run Budget: ")
+	testLabel := normalStyle.Render("Test Run Budget")
 	if c.focusedInput == fieldTestBudget {
-		testLabel = focusedStyle.Render("Test Run Budget: ")
+		testLabel = focusedStyle.Render("Test Run Budget")
 	}
-	content += testLabel + c.testBudgetInput.View() + "\n\n"
+	content += testLabel + "\n" + c.testBudgetInput.View() + "\n\n"
 
 	// Default budget
-	defaultLabel := normalStyle.Render("Default Budget: ")
+	defaultLabel := normalStyle.Render("Default Budget")
 	if c.focusedInput == fieldDefaultBudget {
-		defaultLabel = focusedStyle.Render("Default Budget: ")
+		defaultLabel = focusedStyle.Render("Default Budget")
 	}
-	content += defaultLabel + c.defaultBudgetInput.View() + "\n\n"
+	content += defaultLabel + "\n" + c.defaultBudgetInput.View() + "\n\n"
 
 	// Instructions
 	content += theme.Faint.Render("Use ↑/↓ to navigate, Enter to select option, ESC to save and go back") + "\n" +

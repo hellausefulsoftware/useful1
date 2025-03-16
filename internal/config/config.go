@@ -46,6 +46,61 @@ type Config struct {
 	}
 }
 
+// LoadConfig loads the configuration from standard locations
+func LoadConfig() (*Config, error) {
+	// Create a default config
+	cfg := &Config{}
+
+	// Set default values
+	cfg.Monitor.PollInterval = 5 // 5 minutes
+	cfg.Budgets.Default = 0.25   // Default budget
+	cfg.Logging.Level = "info"   // Default log level
+
+	// Try to find config file in standard locations
+	configFile := os.Getenv("USEFUL1_CONFIG")
+	if configFile == "" {
+		// Check standard locations
+		homeDir, err := os.UserHomeDir()
+		if err == nil {
+			// Try ~/.config/useful1/config.json
+			configFile = filepath.Join(homeDir, ".config", "useful1", "config.json")
+			if _, err := os.Stat(configFile); os.IsNotExist(err) {
+				// Try ~/.useful1.json
+				configFile = filepath.Join(homeDir, ".useful1.json")
+			}
+		}
+	}
+
+	// If config file exists, load it
+	if configFile != "" {
+		if _, err := os.Stat(configFile); err == nil {
+			file, err := os.Open(configFile)
+			if err != nil {
+				return nil, fmt.Errorf("failed to open config file: %w", err)
+			}
+			defer file.Close()
+
+			decoder := json.NewDecoder(file)
+			if err := decoder.Decode(cfg); err != nil {
+				return nil, fmt.Errorf("failed to decode config file: %w", err)
+			}
+		}
+	}
+
+	// Environment variables override config file
+	if token := os.Getenv("USEFUL1_GITHUB_TOKEN"); token != "" {
+		cfg.GitHub.Token = token
+	}
+	if user := os.Getenv("USEFUL1_GITHUB_USER"); user != "" {
+		cfg.GitHub.User = user
+	}
+	if token := os.Getenv("USEFUL1_ANTHROPIC_TOKEN"); token != "" {
+		cfg.Anthropic.Token = token
+	}
+
+	return cfg, nil
+}
+
 // PromptPattern defines a pattern to match in CLI output and its response criteria
 type PromptPattern struct {
 	Pattern  string

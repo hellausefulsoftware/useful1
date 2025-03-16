@@ -396,7 +396,7 @@ func runCLIExecutor(cmd *cobra.Command, screenType tui.ScreenType) {
 
 		// Set poll interval in config (convert seconds to minutes)
 		cfg.Monitor.PollInterval = interval / 60
-		if interval % 60 != 0 {
+		if interval%60 != 0 {
 			logging.Warn("Interval not divisible by 60, rounding down", "seconds", interval, "minutes", interval/60)
 		}
 		logging.Info("Set poll interval", "seconds", interval, "minutes", cfg.Monitor.PollInterval)
@@ -437,7 +437,7 @@ func runCLIExecutor(cmd *cobra.Command, screenType tui.ScreenType) {
 			err := monitor.CheckOnce()
 			if err != nil {
 				logging.Error("Check failed", "error", err)
-				fmt.Println(fmt.Sprintf("{\"status\": \"error\", \"message\": \"Check failed: %s\"}", err.Error()))
+				fmt.Printf("{\"status\": \"error\", \"message\": \"Check failed: %s\"}\n", err.Error())
 				os.Exit(1)
 			}
 

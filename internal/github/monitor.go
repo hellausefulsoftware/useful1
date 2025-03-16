@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/google/go-github/v45/github"
+	"github.com/hellausefulsoftware/useful1/internal/anthropic"
 	"github.com/hellausefulsoftware/useful1/internal/config"
 	"github.com/hellausefulsoftware/useful1/internal/logging"
 	"github.com/hellausefulsoftware/useful1/internal/models"
@@ -586,42 +587,44 @@ func (m *Monitor) GetRecentAssignedIssues(limit int) ([]*models.Issue, error) {
 func (m *Monitor) hasDraftPullRequest(owner, repo string, issueNumber int) (bool, error) {
 	// Create a client for checking pull requests
 	client := NewClient(m.config.GitHub.Token)
-	
-	logging.Info("Checking for existing draft PRs", 
-		"issue", issueNumber, 
-		"owner", owner, 
+
+	logging.Info("Checking for existing draft PRs",
+		"issue", issueNumber,
+		"owner", owner,
 		"repo", repo)
-	
+
 	// Get all PRs that reference this issue
 	prs, err := client.GetPullRequestsForIssue(owner, repo, issueNumber)
 	if err != nil {
-		logging.Warn("Error getting PRs for issue", 
-			"issue", issueNumber, 
+		logging.Warn("Error getting PRs for issue",
+			"issue", issueNumber,
 			"error", err)
 		return false, fmt.Errorf("failed to get pull requests for issue: %w", err)
 	}
-	
-	logging.Info("Found PRs referencing issue", 
-		"issue", issueNumber, 
+
+	logging.Info("Found PRs referencing issue",
+		"issue", issueNumber,
 		"count", len(prs))
-	
-	// Check if any of these PRs are drafts created by our user
+
+	// Check if any of these PRs are open drafts created by our user
 	for _, pr := range prs {
-		logging.Info("Examining PR", 
-			"number", pr.GetNumber(), 
-			"title", pr.GetTitle(), 
+		logging.Info("Examining PR",
+			"number", pr.GetNumber(),
+			"title", pr.GetTitle(),
+			"state", pr.GetState(),
 			"draft", pr.GetDraft(),
 			"user", pr.GetUser().GetLogin())
-		
-		if pr.GetDraft() && pr.GetUser().GetLogin() == m.username {
-			logging.Info("Found existing draft PR", 
+
+		// Only consider open PRs
+		if pr.GetState() == "open" && pr.GetDraft() && pr.GetUser().GetLogin() == m.username {
+			logging.Info("Found existing open draft PR",
 				"number", pr.GetNumber(),
 				"title", pr.GetTitle(),
 				"url", pr.GetHTMLURL())
 			return true, nil
 		}
 	}
-	
+
 	logging.Info("No existing draft PRs found for issue", "issue", issueNumber)
 	return false, nil
 }
@@ -630,31 +633,50 @@ func (m *Monitor) hasDraftPullRequest(owner, repo string, issueNumber int) (bool
 func (m *Monitor) createDraftPullRequest(issue *models.Issue) error {
 	// Create a client for creating pull requests
 	client := NewClient(m.config.GitHub.Token)
-	
-	// Prepare branch name based on issue number and title
-	// Sanitize the title for use in a branch name
-	sanitizedTitle := strings.ToLower(issue.Title)
-	sanitizedTitle = strings.ReplaceAll(sanitizedTitle, " ", "-")
-	sanitizedTitle = strings.ReplaceAll(sanitizedTitle, "/", "-")
-	sanitizedTitle = strings.ReplaceAll(sanitizedTitle, ":", "")
-	sanitizedTitle = strings.ReplaceAll(sanitizedTitle, ".", "")
-	sanitizedTitle = strings.ReplaceAll(sanitizedTitle, ",", "")
-	
-	// Limit branch name length
-	if len(sanitizedTitle) > 50 {
-		sanitizedTitle = sanitizedTitle[:50]
+
+	// Use AI to generate an intelligent branch name
+	var branchName string
+
+	// Check if Anthropic API key is available
+	if m.config.Anthropic.Token != "" {
+		logging.Info("Using AI to analyze issue and generate branch name", 
+			"token_available", "true", 
+			"token_length", len(m.config.Anthropic.Token),
+			"issue_title", issue.Title,
+			"issue_body_length", len(issue.Body),
+			"comment_count", len(issue.Comments))
+
+		// Create an issue analyzer
+		analyzer := anthropic.NewAnalyzer(m.config)
+
+		// Generate the branch name
+		logging.Debug("Calling Anthropic API to analyze issue")
+		aiGeneratedName, err := analyzer.AnalyzeIssue(issue)
+		if err != nil {
+			logging.Warn("Failed to generate AI branch name, falling back to default",
+				"error", err)
+			// Fall back to default naming
+			branchName = generateDefaultBranchName(issue)
+		} else {
+			branchName = aiGeneratedName
+			logging.Info("AI generated branch name", "name", branchName)
+		}
+	} else {
+		// Fall back to default naming if no Anthropic API key
+		logging.Warn("Anthropic API key not configured, using default branch naming",
+			"token_empty", m.config.Anthropic.Token == "")
+		branchName = generateDefaultBranchName(issue)
 	}
-	
-	branchName := fmt.Sprintf("issue-%d-%s", issue.Number, sanitizedTitle)
-	logging.Info("Preparing to create branch for issue", 
-		"issue_number", issue.Number, 
+
+	logging.Info("Preparing to create branch for issue",
+		"issue_number", issue.Number,
 		"branch", branchName,
 		"owner", issue.Owner,
 		"repo", issue.Repo)
-	
+
 	// Get the default branch for the repository (usually 'main' or 'master')
 	defaultBranch := "main" // Default fallback
-	
+
 	// Try to get repo info to determine default branch
 	repoInfo, _, err := client.client.Repositories.Get(context.Background(), issue.Owner, issue.Repo)
 	if err != nil {
@@ -663,7 +685,7 @@ func (m *Monitor) createDraftPullRequest(issue *models.Issue) error {
 		defaultBranch = repoInfo.GetDefaultBranch()
 		logging.Info("Using repository default branch", "branch", defaultBranch)
 	}
-	
+
 	// Try to create the branch
 	logging.Info("Creating branch", "branch", branchName, "from", defaultBranch)
 	err = client.CreateBranch(issue.Owner, issue.Repo, branchName, defaultBranch)
@@ -671,37 +693,96 @@ func (m *Monitor) createDraftPullRequest(issue *models.Issue) error {
 		return fmt.Errorf("failed to create branch: %w", err)
 	}
 	
-	// Prepare PR title and body
-	prTitle := fmt.Sprintf("Draft: Fix for issue #%d - %s", issue.Number, issue.Title)
-	prBody := fmt.Sprintf("This is an automatically generated draft PR for issue #%d.\n\n", issue.Number)
+	// Create implementation.txt file in the branch and a local clone
+	logging.Info("Creating implementation file for the PR", "branch", branchName)
+	err = client.CreateImplementationFile(issue.Owner, issue.Repo, branchName, issue.Number)
+	if err != nil {
+		logging.Warn("Failed to create implementation file", "error", err)
+		// Continue anyway - we'll still create the PR
+	}
+
+	// Prepare PR title and body with AI insights if available
+	var prTitle string
+	var prBody string
+
+	// Create PR title based on branch type (extracted from branch name)
+	if strings.HasPrefix(branchName, "bugfix/") {
+		prTitle = fmt.Sprintf("Fix: Issue #%d - %s", issue.Number, issue.Title)
+	} else if strings.HasPrefix(branchName, "feature/") {
+		prTitle = fmt.Sprintf("Feature: Issue #%d - %s", issue.Number, issue.Title)
+	} else if strings.HasPrefix(branchName, "chore/") {
+		prTitle = fmt.Sprintf("Chore: Issue #%d - %s", issue.Number, issue.Title)
+	} else {
+		// Default fallback
+		prTitle = fmt.Sprintf("Draft: Fix for issue #%d - %s", issue.Number, issue.Title)
+	}
+
+	// Start with basic PR body
+	prBody = fmt.Sprintf("This is an automatically generated draft PR for issue #%d.\n\n", issue.Number)
 	prBody += fmt.Sprintf("## Issue\n[%s](%s)\n\n", issue.Title, issue.URL)
-	prBody += "## Description\n"
-	prBody += "This PR was automatically created to track progress on the linked issue.\n\n"
+
+	// Generate AI summary for PR description if Anthropic token is available
+	if m.config.Anthropic.Token != "" {
+		logging.Info("Generating AI summary for PR description",
+			"token_available", "true",
+			"token_length", len(m.config.Anthropic.Token))
+		
+		analyzer := anthropic.NewAnalyzer(m.config)
+
+		// Create a transcript of the issue
+		transcript := makeIssueTranscript(issue)
+		logging.Debug("Created issue transcript for summarization", 
+			"transcript_length", len(transcript),
+			"issue_number", issue.Number)
+
+		// Try to get an AI summary
+		logging.Debug("Calling Anthropic API to summarize issue")
+		summary, summaryErr := analyzer.SummarizeIssue(transcript)
+		if summaryErr != nil {
+			logging.Warn("Failed to generate AI summary", "error", summaryErr)
+		} else if summary != "" {
+			logging.Info("Successfully generated AI summary", "length", len(summary))
+			prBody += fmt.Sprintf("## AI-Generated Summary\n%s\n\n", summary)
+		} else {
+			logging.Warn("AI summary was empty")
+		}
+	} else {
+		logging.Warn("Anthropic API key not configured, skipping AI summary",
+			"token_empty", m.config.Anthropic.Token == "")
+	}
+
+	// Add standard sections
 	prBody += "## TODO\n- [ ] Implement solution\n- [ ] Add tests\n- [ ] Update documentation\n"
-	
-	logging.Info("Creating draft PR", 
-		"title", prTitle, 
-		"head", branchName, 
+
+	logging.Info("Creating draft PR",
+		"title", prTitle,
+		"head", branchName,
 		"base", defaultBranch)
-	
-	// Create the draft PR
+
+	// Create the draft PR - use the branchName we just created above
+	logging.Debug("Calling CreateDraftPullRequest with created branch", 
+		"branch", branchName, 
+		"owner", issue.Owner, 
+		"repo", issue.Repo, 
+		"title_length", len(prTitle))
+		
 	pr, err := client.CreateDraftPullRequest(
 		issue.Owner,
 		issue.Repo,
 		prTitle,
 		prBody,
-		branchName,
+		branchName, // Use the branch name we created above
 		defaultBranch,
 	)
-	
+
 	if err != nil {
 		return fmt.Errorf("failed to create draft PR: %w", err)
 	}
-	
-	logging.Info("Successfully created draft PR", 
+
+	logging.Info("Successfully created draft PR",
 		"pr_number", pr.GetNumber(),
 		"url", pr.GetHTMLURL())
-	
+
 	return nil
 }
 
@@ -725,4 +806,62 @@ func (m *Monitor) GetStats() map[string]interface{} {
 // GetUsername returns the GitHub username being used for monitoring
 func (m *Monitor) GetUsername() string {
 	return m.username
+}
+
+// generateDefaultBranchName creates a simple branch name based on issue info
+func generateDefaultBranchName(issue *models.Issue) string {
+	// Sanitize the title for use in a branch name
+	sanitizedTitle := strings.ToLower(issue.Title)
+	sanitizedTitle = strings.ReplaceAll(sanitizedTitle, " ", "-")
+	sanitizedTitle = strings.ReplaceAll(sanitizedTitle, "/", "-")
+	sanitizedTitle = strings.ReplaceAll(sanitizedTitle, ":", "")
+	sanitizedTitle = strings.ReplaceAll(sanitizedTitle, ".", "")
+	sanitizedTitle = strings.ReplaceAll(sanitizedTitle, ",", "")
+
+	// Limit branch name length
+	if len(sanitizedTitle) > 50 {
+		sanitizedTitle = sanitizedTitle[:50]
+	}
+
+	return fmt.Sprintf("issue-%d-%s", issue.Number, sanitizedTitle)
+}
+
+// makeIssueTranscript creates a formatted transcript of the issue and its comments
+func makeIssueTranscript(issue *models.Issue) string {
+	var transcript strings.Builder
+
+	// Issue metadata
+	transcript.WriteString(fmt.Sprintf("ISSUE #%d: %s\n\n", issue.Number, issue.Title))
+	transcript.WriteString(fmt.Sprintf("Created by: %s\n", issue.User))
+	transcript.WriteString(fmt.Sprintf("State: %s\n", issue.State))
+	transcript.WriteString(fmt.Sprintf("Created: %s\n", issue.CreatedAt.Format("2006-01-02")))
+	transcript.WriteString(fmt.Sprintf("Updated: %s\n", issue.UpdatedAt.Format("2006-01-02")))
+
+	if len(issue.Labels) > 0 {
+		transcript.WriteString(fmt.Sprintf("Labels: %s\n", strings.Join(issue.Labels, ", ")))
+	}
+
+	if len(issue.Assignees) > 0 {
+		transcript.WriteString(fmt.Sprintf("Assignees: %s\n", strings.Join(issue.Assignees, ", ")))
+	}
+
+	// Issue description
+	transcript.WriteString("\nISSUE DESCRIPTION:\n")
+	transcript.WriteString(issue.Body)
+	transcript.WriteString("\n\n")
+
+	// Comments
+	if len(issue.Comments) > 0 {
+		transcript.WriteString("COMMENTS:\n\n")
+		for i, comment := range issue.Comments {
+			transcript.WriteString(fmt.Sprintf("--- Comment #%d by %s (%s) ---\n",
+				i+1,
+				comment.User,
+				comment.CreatedAt.Format("2006-01-02")))
+			transcript.WriteString(comment.Body)
+			transcript.WriteString("\n\n")
+		}
+	}
+
+	return transcript.String()
 }

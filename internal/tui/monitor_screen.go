@@ -82,7 +82,7 @@ func NewMonitorScreen(app *App) *MonitorScreen {
 		repoListVisible:  true,
 		showCreatePRForm: false,
 		fetchingRepos:    false,
-		selectAllRepos:   false,
+		selectAllRepos:   true,
 	}
 
 	// Queue loading repositories if the client is available
@@ -137,7 +137,7 @@ func (m *MonitorScreen) fetchRepositories() tea.Msg {
 		repos = append(repos, Repository{
 			FullName:      repo.GetFullName(),
 			Description:   repo.GetDescription(),
-			Selected:      false,
+			Selected:      true, // Default to selected
 			HasIssues:     repo.GetHasIssues(),
 			Stars:         repo.GetStargazersCount(),
 			ForksCount:    repo.GetForksCount(),
@@ -391,7 +391,7 @@ func (m *MonitorScreen) View() string {
 			// Use the same approach as for the log section
 			screenWidth := m.app.GetWidth()
 			repoWidth := min(80, max(60, int(float64(screenWidth)*0.8)))
-			
+
 			repoListStyle := lipgloss.NewStyle().
 				BorderStyle(lipgloss.RoundedBorder()).
 				BorderForeground(lipgloss.Color(theme.BorderColor)).
@@ -550,7 +550,7 @@ func (m *MonitorScreen) View() string {
 	// On larger screens, cap at a reasonable width to prevent long lines
 	screenWidth := m.app.GetWidth()
 	logWidth := min(80, max(60, int(float64(screenWidth)*0.8)))
-	
+
 	logStyle := lipgloss.NewStyle().
 		BorderStyle(lipgloss.RoundedBorder()).
 		BorderForeground(lipgloss.Color(theme.BorderColor)).
