@@ -2,8 +2,8 @@
 
 ## Build & Test Commands
 - Build: `make build`
-- Run: `make run`
-- Run with programmatic output: `./bin/useful1 --programmatic [command]`
+- Run: `make run` 
+- Run: `./bin/useful1 --programmatic [command]`
 - Test all: `make test`
 - Test single: `go test -v ./path/to/package -run TestName`
 - Coverage: `make test-coverage`
@@ -45,3 +45,6 @@
 - Use multi-line edit blocks: Include at least 3-5 lines before and after the change point
 - For UI components: Check for instruction text that needs updating when modifying behaviors
 - Test all edits: After making changes, run `make build` `make test` and `make lint-all` to verify correctness
+- Never add comments like "this would be replaced in real implementation" - implement the actual functionality
+- Never create stub/dummy implementations - write complete, production-ready code for all features
+- Always ensure the code works correctly with actual, parsed values rather than hardcoded defaults

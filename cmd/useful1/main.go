@@ -6,13 +6,19 @@ import (
 
 	"github.com/hellausefulsoftware/useful1/internal/cli"
 	"github.com/hellausefulsoftware/useful1/internal/config"
+	"github.com/hellausefulsoftware/useful1/internal/logging"
 	"github.com/hellausefulsoftware/useful1/internal/tui"
 	"github.com/spf13/cobra"
 )
 
 func main() {
+	// Initialize logger with default configuration
+	logging.Initialize(nil)
+
 	// Define program-wide flags
 	var programmatic bool
+	var logLevel string
+	var logJSON bool
 
 	rootCmd := &cobra.Command{
 		Use:   "useful1",
@@ -30,6 +36,37 @@ func main() {
 
 	// Add programmatic flag to all commands
 	rootCmd.PersistentFlags().BoolVar(&programmatic, "programmatic", false, "Run in programmatic mode (machine-readable output)")
+
+	// Add logging flags
+	rootCmd.PersistentFlags().StringVar(&logLevel, "log-level", "info", "Set logging level (debug, info, warn, error)")
+	rootCmd.PersistentFlags().BoolVar(&logJSON, "log-json", false, "Output logs in JSON format")
+
+	// Configure logging based on flags
+	rootCmd.PersistentPreRun = func(cmd *cobra.Command, args []string) {
+		// Set log level based on flag
+		var level logging.LogLevel
+		switch logLevel {
+		case "debug":
+			level = logging.LogLevelDebug
+		case "info":
+			level = logging.LogLevelInfo
+		case "warn":
+			level = logging.LogLevelWarn
+		case "error":
+			level = logging.LogLevelError
+		default:
+			level = logging.LogLevelInfo
+		}
+
+		// Configure logger
+		logging.Initialize(&logging.Config{
+			Level:      level,
+			Output:     os.Stdout,
+			JSONFormat: logJSON,
+		})
+
+		logging.Info("Starting useful1", "version", "1.0.0")
+	}
 
 	// Define subcommands
 	respondCmd := &cobra.Command{
@@ -82,8 +119,10 @@ func main() {
 				runCLIExecutor(cmd, tui.ScreenTest)
 				return
 			}
-			// Run TUI with the test screen
-			runTUIWithScreen(tui.ScreenTest)
+			// In TUI mode, just show a message that this feature is not available in TUI
+			logging.Info("Test command is only available in programmatic mode")
+			fmt.Println("The test command is only available in programmatic mode. Use --programmatic flag.")
+			os.Exit(1)
 		},
 	}
 	// Add flags for test command
@@ -134,7 +173,7 @@ func main() {
 
 	// Execute root command
 	if err := rootCmd.Execute(); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		logging.Error("Failed to execute command", "error", err)
 		os.Exit(1)
 	}
 }
@@ -153,13 +192,13 @@ func runTUIWithScreen(screen tui.ScreenType) {
 	if config.Exists() {
 		cfg, err = config.Load()
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: Error loading configuration: %v\n", err)
+			logging.Warn("Error loading configuration", "error", err)
 		}
 	}
 
 	// Launch TUI app with specified screen
 	if err := tui.RunWithScreen(cfg, screen); err != nil {
-		fmt.Fprintf(os.Stderr, "Error running TUI: %v\n", err)
+		logging.Error("Failed to run TUI", "error", err)
 		os.Exit(1)
 	}
 }
@@ -171,15 +210,29 @@ func runCLIExecutor(cmd *cobra.Command, screenType tui.ScreenType) {
 
 	// Always need config for CLI executor
 	if !config.Exists() {
-		fmt.Fprintf(os.Stderr, "Error: Configuration is required for programmatic mode\n")
-		fmt.Fprintf(os.Stderr, "Please run 'useful1 config' first to create a configuration\n")
+		logging.Error("Configuration is required for programmatic mode",
+			"hint", "run 'useful1 config' first to create a configuration")
+
+		programmatic, flagErr := cmd.Flags().GetBool("programmatic")
+		if flagErr != nil {
+			logging.Warn("Failed to get programmatic flag", "error", flagErr)
+		} else if programmatic {
+			fmt.Fprintf(os.Stderr, "{\"status\": \"error\", \"message\": \"Configuration is required for programmatic mode\"}\n")
+		}
 		os.Exit(1)
 	}
 
 	// Load configuration
 	cfg, err = config.Load()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error loading configuration: %v\n", err)
+		logging.Error("Failed to load configuration", "error", err)
+
+		programmatic, flagErr := cmd.Flags().GetBool("programmatic")
+		if flagErr != nil {
+			logging.Warn("Failed to get programmatic flag", "error", flagErr)
+		} else if programmatic {
+			fmt.Fprintf(os.Stderr, "{\"status\": \"error\", \"message\": \"Error loading configuration: %s\"}\n", err)
+		}
 		os.Exit(1)
 	}
 
@@ -283,17 +336,35 @@ func runCLIExecutor(cmd *cobra.Command, screenType tui.ScreenType) {
 
 	case tui.ScreenConfig:
 		// Config just shows success in programmatic mode since config is already loaded
-		fmt.Println("{\"status\": \"success\", \"message\": \"Configuration loaded successfully\"}")
+		logging.Info("Configuration loaded successfully")
+		programmaticVal, flagErr := cmd.Flags().GetBool("programmatic")
+		if flagErr != nil {
+			logging.Warn("Failed to get programmatic flag", "error", flagErr)
+		} else if programmaticVal {
+			fmt.Println("{\"status\": \"success\", \"message\": \"Configuration loaded successfully\"}")
+		}
 		return
 
 	case tui.ScreenMonitor:
 		// Start monitoring in programmatic mode
-		// This would be a long-running process with machine-readable output
-		fmt.Println("{\"status\": \"starting\", \"message\": \"Monitoring started\"}")
+		logging.Info("Starting monitoring")
+		programmaticVal, flagErr := cmd.Flags().GetBool("programmatic")
+		if flagErr != nil {
+			logging.Warn("Failed to get programmatic flag", "error", flagErr)
+		} else if programmaticVal {
+			fmt.Println("{\"status\": \"starting\", \"message\": \"Monitoring started\"}")
+		}
 
 		// Implement monitor functionality here
 		// For now, just show a placeholder message
-		fmt.Println("{\"status\": \"error\", \"message\": \"Programmatic monitoring not implemented yet\"}")
+		logging.Error("Programmatic monitoring not implemented yet")
+		// Reuse variables declared above
+		programmaticVal, flagErr = cmd.Flags().GetBool("programmatic")
+		if flagErr != nil {
+			logging.Warn("Failed to get programmatic flag", "error", flagErr)
+		} else if programmaticVal {
+			fmt.Println("{\"status\": \"error\", \"message\": \"Programmatic monitoring not implemented yet\"}")
+		}
 		os.Exit(1)
 
 	default:
@@ -302,7 +373,14 @@ func runCLIExecutor(cmd *cobra.Command, screenType tui.ScreenType) {
 
 	// Handle any errors
 	if cmdErr != nil {
-		fmt.Fprintf(os.Stderr, "{\"status\": \"error\", \"message\": \"%s\"}\n", cmdErr.Error())
+		logging.Error("Command execution failed", "error", cmdErr)
+
+		programmaticVal, flagErr := cmd.Flags().GetBool("programmatic")
+		if flagErr != nil {
+			logging.Warn("Failed to get programmatic flag", "error", flagErr)
+		} else if programmaticVal {
+			fmt.Fprintf(os.Stderr, "{\"status\": \"error\", \"message\": \"%s\"}\n", cmdErr.Error())
+		}
 		os.Exit(1)
 	}
 }

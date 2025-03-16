@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -34,9 +35,15 @@ type Config struct {
 		Default       float64
 	}
 	Monitor struct {
-		PollInterval  int      // in minutes
-		CheckMentions bool     // whether to check for mentions
-		RepoFilter    []string // optional list of repositories to filter on (empty means all)
+		PollInterval       int      // in minutes
+		CheckMentions      bool     // whether to check for mentions
+		RepoFilter         []string // optional list of repositories to filter on (empty means all)
+		AssignedIssuesOnly bool     // whether to only show issues assigned to the user
+	}
+	Logging struct {
+		Output     io.Writer
+		Level      string
+		JSONFormat bool
 	}
 }
 
@@ -192,10 +199,12 @@ func (c *Configurator) SetCLIToolPath(path string) {
 }
 
 // SetMonitoringSettings sets the issue monitoring settings
-func (c *Configurator) SetMonitoringSettings(interval int, checkMentions bool, repoFilter []string) {
+func (c *Configurator) SetMonitoringSettings(interval int, checkMentions bool, repoFilter []string, assignedOnly bool) {
 	c.config.Monitor.PollInterval = interval
 	c.config.Monitor.CheckMentions = checkMentions
 	c.config.Monitor.RepoFilter = repoFilter
+	// Always set to true, we only want to monitor assigned issues
+	c.config.Monitor.AssignedIssuesOnly = true
 }
 
 // Save saves the configuration to the user's home directory

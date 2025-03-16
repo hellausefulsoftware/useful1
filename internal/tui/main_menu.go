@@ -27,7 +27,6 @@ func NewMainMenuScreen(app *App) *MainMenuScreen {
 		items: []MenuItem{
 			{title: "Respond", description: "Respond to GitHub issues", screen: ScreenRespond},
 			{title: "PR", description: "Create pull requests", screen: ScreenPR},
-			{title: "Test", description: "Run tests", screen: ScreenTest},
 			{title: "Config", description: "Configure settings", screen: ScreenConfig},
 			{title: "Monitor", description: "Monitor GitHub issues", screen: ScreenMonitor},
 			{title: "Quit", description: "Exit the application", screen: 0},

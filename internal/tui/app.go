@@ -2,12 +2,14 @@ package tui
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/hellausefulsoftware/useful1/internal/config"
+	"github.com/hellausefulsoftware/useful1/internal/logging"
 )
 
 // KeyMap defines keybindings
@@ -91,6 +93,23 @@ func NewApp(cfg *config.Config) *App {
 	helpModel.Styles.FullDesc = theme.Text
 	helpModel.Styles.FullSeparator = theme.Faint
 
+	// Initialize logging config if it doesn't exist
+	if cfg != nil && cfg.Logging.Output == nil {
+		// Only initialize logger when in TUI mode if output field is not set
+		writer := os.Stdout // Use the imported os package
+		cfg.Logging.Output = writer
+		cfg.Logging.Level = "info"
+		cfg.Logging.JSONFormat = false
+		
+		// Initialize logger
+		logConfig := &logging.Config{
+			Level:      logging.LogLevel(cfg.Logging.Level),
+			Output:     cfg.Logging.Output,
+			JSONFormat: cfg.Logging.JSONFormat,
+		}
+		logging.Initialize(logConfig)
+	}
+
 	app := &App{
 		config:   cfg,
 		theme:    theme,
@@ -106,7 +125,6 @@ func NewApp(cfg *config.Config) *App {
 	// Only initialize screens that need config if config exists
 	app.screens[ScreenRespond] = NewRespondScreen(app)
 	app.screens[ScreenPR] = NewPRScreen(app)
-	app.screens[ScreenTest] = NewTestScreen(app)
 	app.screens[ScreenConfig] = NewConfigScreen(app)
 	app.screens[ScreenMonitor] = NewMonitorScreen(app)
 

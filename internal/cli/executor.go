@@ -13,6 +13,7 @@ import (
 
 	"github.com/hellausefulsoftware/useful1/internal/config"
 	"github.com/hellausefulsoftware/useful1/internal/github"
+	"github.com/hellausefulsoftware/useful1/internal/logging"
 )
 
 // Executor handles execution of CLI commands and interaction with prompts
@@ -27,6 +28,11 @@ func NewExecutor(cfg *config.Config) *Executor {
 		config: cfg,
 		github: github.NewClient(cfg.GitHub.Token),
 	}
+}
+
+// GetGitHubClient returns the GitHub client
+func (e *Executor) GetGitHubClient() *github.Client {
+	return e.github
 }
 
 // formatErrorResponse formats an error into a JSON response for programmatic mode
@@ -49,6 +55,7 @@ func (e *Executor) formatErrorResponse(err error, context map[string]interface{}
 		fmt.Println(string(jsonResponse))
 	} else {
 		// Fallback if JSON marshaling fails
+		logging.Error("JSON marshaling failed", "error", jsonErr)
 		fmt.Printf("{\"status\":\"error\",\"message\":\"%s\"}", err.Error())
 	}
 }
@@ -112,7 +119,7 @@ func (e *Executor) RespondToIssue(issueNumber string, templateName string) error
 
 // RespondToIssueText processes issue text and responds using the CLI tool
 func (e *Executor) RespondToIssueText(owner, repo string, issueNumber int, issueText string) error {
-	fmt.Printf("Generating response for issue #%d in %s/%s\n", issueNumber, owner, repo)
+	logging.Info("Generating response for issue", "issue", issueNumber, "owner", owner, "repo", repo)
 
 	// Create a temporary file with the issue text
 	tmpFile, err := os.CreateTemp("", "issue-*.txt")
@@ -121,7 +128,7 @@ func (e *Executor) RespondToIssueText(owner, repo string, issueNumber int, issue
 	}
 	defer func() {
 		if removeErr := os.Remove(tmpFile.Name()); removeErr != nil {
-			fmt.Printf("Warning: Failed to remove temporary file %s: %v\n", tmpFile.Name(), removeErr)
+			logging.Warn("Failed to remove temporary file", "file", tmpFile.Name(), "error", removeErr)
 		}
 	}()
 
@@ -162,7 +169,7 @@ func (e *Executor) RespondToIssueText(owner, repo string, issueNumber int, issue
 	}
 	defer func() {
 		if removeErr := os.Remove(metadataFile.Name()); removeErr != nil {
-			fmt.Printf("Warning: Failed to remove metadata file %s: %v\n", metadataFile.Name(), removeErr)
+			logging.Warn("Failed to remove metadata file", "file", metadataFile.Name(), "error", removeErr)
 		}
 	}()
 
@@ -407,12 +414,12 @@ func (e *Executor) executeWithPrompts(cmd string, args []string) (string, error)
 					if e.checkCriteria(outputBuffer.String(), pattern.Criteria) {
 						// Send confirmation
 						if _, err := fmt.Fprintln(stdin, pattern.Response); err != nil {
-							fmt.Printf("Warning: Failed to send confirmation response: %v\n", err)
+							logging.Warn("Failed to send confirmation response", "error", err)
 						}
 					} else {
 						// Send rejection or cancel
 						if _, err := fmt.Fprintln(stdin, "n"); err != nil {
-							fmt.Printf("Warning: Failed to send rejection response: %v\n", err)
+							logging.Warn("Failed to send rejection response", "error", err)
 						}
 					}
 				}

@@ -1,19 +1,39 @@
 package tui
 
 import (
+	"fmt"
+	"strconv"
+
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/hellausefulsoftware/useful1/internal/config"
+	"github.com/hellausefulsoftware/useful1/internal/github"
+)
+
+// Field indices for the config screen
+const (
+	fieldGitHubToken = iota
+	fieldGitHubUsername
+	fieldAnthropicToken
+	fieldCLICommand
+	fieldMonitorInterval
+	fieldIssueResponseBudget
+	fieldPRBudget
+	fieldTestBudget
+	fieldDefaultBudget
+	fieldCount // Total number of fields
 )
 
 // ConfigScreen is the screen for configuring settings
 type ConfigScreen struct {
 	BaseScreen
 	githubTokenInput         textinput.Model
+	githubUsernameInput      textinput.Model
 	anthropicTokenInput      textinput.Model
 	cliCommandInput          textinput.Model
+	monitorIntervalInput     textinput.Model
 	issueResponseBudgetInput textinput.Model
 	prBudgetInput            textinput.Model
 	testBudgetInput          textinput.Model
@@ -31,6 +51,19 @@ type ConfigScreen struct {
 	showAnthropicHelp        bool
 }
 
+// updateInputReferences updates all the input field references from the inputs slice
+func (c *ConfigScreen) updateInputReferences() {
+	c.githubTokenInput = c.inputs[fieldGitHubToken]
+	c.githubUsernameInput = c.inputs[fieldGitHubUsername]
+	c.anthropicTokenInput = c.inputs[fieldAnthropicToken]
+	c.cliCommandInput = c.inputs[fieldCLICommand]
+	c.monitorIntervalInput = c.inputs[fieldMonitorInterval]
+	c.issueResponseBudgetInput = c.inputs[fieldIssueResponseBudget]
+	c.prBudgetInput = c.inputs[fieldPRBudget]
+	c.testBudgetInput = c.inputs[fieldTestBudget]
+	c.defaultBudgetInput = c.inputs[fieldDefaultBudget]
+}
+
 // NewConfigScreen creates a new configuration screen
 func NewConfigScreen(app *App) *ConfigScreen {
 	// GitHub token input
@@ -41,6 +74,17 @@ func NewConfigScreen(app *App) *ConfigScreen {
 		githubTokenInput.SetValue(app.GetConfig().GitHub.Token)
 	}
 	githubTokenInput.Focus()
+	
+	// GitHub username input
+	githubUsernameInput := textinput.New()
+	githubUsernameInput.Placeholder = "GitHub username (required for monitoring)"
+	githubUsernameInput.Width = 50
+	if app.GetConfig() != nil && app.GetConfig().GitHub.User != "" {
+		// Don't show the placeholder text
+		if app.GetConfig().GitHub.User != "ENTER_GITHUB_USERNAME_HERE" {
+			githubUsernameInput.SetValue(app.GetConfig().GitHub.User)
+		}
+	}
 
 	// Anthropic token input
 	anthropicTokenInput := textinput.New()
@@ -58,6 +102,22 @@ func NewConfigScreen(app *App) *ConfigScreen {
 		cliCommandInput.SetValue(app.GetConfig().CLI.Command)
 	} else {
 		cliCommandInput.SetValue("claude --dangerously-skip-permissions")
+	}
+	
+	// Monitor interval input (in seconds)
+	monitorIntervalInput := textinput.New()
+	monitorIntervalInput.Placeholder = "Monitor poll interval in seconds (default: 60)"
+	monitorIntervalInput.Width = 10
+	if app.GetConfig() != nil {
+		// Config stores interval in minutes, convert to seconds
+		intervalSecs := app.GetConfig().Monitor.PollInterval * 60
+		// If it's 0 or not set, use the default
+		if intervalSecs == 0 {
+			intervalSecs = 60 // default to 60 seconds
+		}
+		monitorIntervalInput.SetValue(fmt.Sprintf("%d", intervalSecs))
+	} else {
+		monitorIntervalInput.SetValue("60") // default to 60 seconds
 	}
 
 	// Budget inputs
@@ -91,8 +151,10 @@ func NewConfigScreen(app *App) *ConfigScreen {
 
 	inputs := []textinput.Model{
 		githubTokenInput,
+		githubUsernameInput,
 		anthropicTokenInput,
 		cliCommandInput,
+		monitorIntervalInput,
 		issueResponseBudgetInput,
 		prBudgetInput,
 		testBudgetInput,
@@ -106,17 +168,24 @@ func NewConfigScreen(app *App) *ConfigScreen {
 		"Save Configuration - Save your settings",
 	}
 
+	// Verify we have the right number of inputs
+	if len(inputs) != fieldCount {
+		panic(fmt.Sprintf("Input field count mismatch: expected %d, got %d", fieldCount, len(inputs)))
+	}
+	
 	return &ConfigScreen{
 		BaseScreen:               NewBaseScreen(app, "Configuration"),
 		githubTokenInput:         githubTokenInput,
+		githubUsernameInput:      githubUsernameInput,
 		anthropicTokenInput:      anthropicTokenInput,
 		cliCommandInput:          cliCommandInput,
+		monitorIntervalInput:     monitorIntervalInput,
 		issueResponseBudgetInput: issueResponseBudgetInput,
 		prBudgetInput:            prBudgetInput,
 		testBudgetInput:          testBudgetInput,
 		defaultBudgetInput:       defaultBudgetInput,
 		inputs:                   inputs,
-		focusedInput:             0,
+		focusedInput:             fieldGitHubToken,
 		menuItems:                menuItems,
 		selectedMenuItem:         0,
 		inMenuSelection:          false,
@@ -170,6 +239,22 @@ func (c *ConfigScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			// First check if all required fields are filled - if yes, save config before going back
 			if c.githubTokenInput.Value() != "" && c.anthropicTokenInput.Value() != "" && c.cliCommandInput.Value() != "" {
+				// Warn if GitHub username is missing (important for monitoring)
+				if c.githubUsernameInput.Value() == "" {
+					c.githubUsernameInput.SetValue("") // Clear any value to show placeholder
+					c.focusedInput = fieldGitHubUsername // Focus the GitHub username field
+					// Update focus
+					for i := 0; i < fieldCount; i++ {
+						if i == c.focusedInput {
+							c.inputs[i].Focus()
+						} else {
+							c.inputs[i].Blur()
+						}
+					}
+					// Update input references
+					c.updateInputReferences()
+					return c, nil
+				}
 				c.executing = true
 				return c, c.startExecution()
 			}
@@ -199,27 +284,26 @@ func (c *ConfigScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			// Cycle through inputs in normal mode
 			if key.Matches(msg, c.app.keyMap.Up) {
-				c.focusedInput--
-				if c.focusedInput < -1 { // -1 to select menu items
-					c.focusedInput = len(c.inputs) - 1
-				} else if c.focusedInput == -1 {
-					// Switch to menu selection mode
-					c.inMenuSelection = true
+				// Only move up if not already at the first field
+				if c.focusedInput > 0 {
+					c.focusedInput--
+				} else {
+					// At the top field already, do nothing
 					return c, nil
 				}
 			} else {
-				c.focusedInput++
-				if c.focusedInput >= len(c.inputs) {
-					c.focusedInput = -1 // -1 to select menu items
-					// Switch to menu selection mode
-					c.inMenuSelection = true
+				// Only move down if not already at the last field
+				if c.focusedInput < fieldCount - 1 {
+					c.focusedInput++
+				} else {
+					// At the bottom field already, do nothing
 					return c, nil
 				}
 			}
 
 			// Focus the appropriate input if not in menu selection
 			if !c.inMenuSelection && c.focusedInput >= 0 {
-				for i := 0; i < len(c.inputs); i++ {
+				for i := 0; i < fieldCount; i++ {
 					if i == c.focusedInput {
 						c.inputs[i].Focus()
 					} else {
@@ -228,13 +312,7 @@ func (c *ConfigScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 
 				// Update the reference inputs
-				c.githubTokenInput = c.inputs[0]
-				c.anthropicTokenInput = c.inputs[1]
-				c.cliCommandInput = c.inputs[2]
-				c.issueResponseBudgetInput = c.inputs[3]
-				c.prBudgetInput = c.inputs[4]
-				c.testBudgetInput = c.inputs[5]
-				c.defaultBudgetInput = c.inputs[6]
+				c.updateInputReferences()
 			}
 
 			return c, nil
@@ -281,18 +359,12 @@ func (c *ConfigScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	// Handle input updates for the focused input
-	if c.focusedInput >= 0 && c.focusedInput < len(c.inputs) {
+	if c.focusedInput >= 0 && c.focusedInput < fieldCount {
 		var cmd tea.Cmd
 		c.inputs[c.focusedInput], cmd = c.inputs[c.focusedInput].Update(msg)
 
 		// Update the reference inputs
-		c.githubTokenInput = c.inputs[0]
-		c.anthropicTokenInput = c.inputs[1]
-		c.cliCommandInput = c.inputs[2]
-		c.issueResponseBudgetInput = c.inputs[3]
-		c.prBudgetInput = c.inputs[4]
-		c.testBudgetInput = c.inputs[5]
-		c.defaultBudgetInput = c.inputs[6]
+		c.updateInputReferences()
 
 		cmds = append(cmds, cmd)
 	}
@@ -388,14 +460,22 @@ func (c *ConfigScreen) View() string {
 
 	// GitHub token
 	githubLabel := normalStyle.Render("GitHub Token: ")
-	if c.focusedInput == 0 {
+	if c.focusedInput == fieldGitHubToken {
 		githubLabel = focusedStyle.Render("GitHub Token: ")
 	}
 	content += githubLabel + c.githubTokenInput.View() + "\n\n"
+	
+	// GitHub username
+	usernameLabel := normalStyle.Render("GitHub Username: ")
+	if c.focusedInput == fieldGitHubUsername {
+		usernameLabel = focusedStyle.Render("GitHub Username: ")
+	}
+	content += usernameLabel + c.githubUsernameInput.View() + "\n" +
+		theme.Faint.Render("    Required for monitoring assigned issues") + "\n\n"
 
 	// Anthropic token
 	anthropicLabel := normalStyle.Render("Anthropic API Key: ")
-	if c.focusedInput == 1 {
+	if c.focusedInput == fieldAnthropicToken {
 		anthropicLabel = focusedStyle.Render("Anthropic API Key: ")
 	}
 	content += anthropicLabel + c.anthropicTokenInput.View() + "\n\n"
@@ -405,39 +485,50 @@ func (c *ConfigScreen) View() string {
 
 	// CLI command
 	cliLabel := normalStyle.Render("CLI Command: ")
-	if c.focusedInput == 2 {
+	if c.focusedInput == fieldCLICommand {
 		cliLabel = focusedStyle.Render("CLI Command: ")
 	}
 	content += cliLabel + c.cliCommandInput.View() + "\n" +
 		theme.Faint.Render("    Enter command with arguments (default: claude --dangerously-skip-permissions)") + "\n\n"
+		
+	// Monitor Settings section
+	content += theme.Bold.Render("Monitor Settings:") + "\n\n"
+	
+	// Poll interval
+	intervalLabel := normalStyle.Render("Poll Interval (seconds): ")
+	if c.focusedInput == fieldMonitorInterval {
+		intervalLabel = focusedStyle.Render("Poll Interval (seconds): ")
+	}
+	content += intervalLabel + c.monitorIntervalInput.View() + "\n" +
+		theme.Faint.Render("    How often to check for new issues (default: 60 seconds)") + "\n\n"
 
 	// Budgets section
 	content += theme.Bold.Render("Budgets:") + "\n\n"
 
 	// Issue response budget
 	issueLabel := normalStyle.Render("Issue Response Budget: ")
-	if c.focusedInput == 3 {
+	if c.focusedInput == fieldIssueResponseBudget {
 		issueLabel = focusedStyle.Render("Issue Response Budget: ")
 	}
 	content += issueLabel + c.issueResponseBudgetInput.View() + "\n\n"
 
 	// PR budget
 	prLabel := normalStyle.Render("PR Creation Budget: ")
-	if c.focusedInput == 4 {
+	if c.focusedInput == fieldPRBudget {
 		prLabel = focusedStyle.Render("PR Creation Budget: ")
 	}
 	content += prLabel + c.prBudgetInput.View() + "\n\n"
 
 	// Test budget
 	testLabel := normalStyle.Render("Test Run Budget: ")
-	if c.focusedInput == 5 {
+	if c.focusedInput == fieldTestBudget {
 		testLabel = focusedStyle.Render("Test Run Budget: ")
 	}
 	content += testLabel + c.testBudgetInput.View() + "\n\n"
 
 	// Default budget
 	defaultLabel := normalStyle.Render("Default Budget: ")
-	if c.focusedInput == 6 {
+	if c.focusedInput == fieldDefaultBudget {
 		defaultLabel = focusedStyle.Render("Default Budget: ")
 	}
 	content += defaultLabel + c.defaultBudgetInput.View() + "\n\n"
@@ -470,24 +561,87 @@ func (c *ConfigScreen) ShortHelp() []key.Binding {
 func (c *ConfigScreen) startExecution() tea.Cmd {
 	return func() tea.Msg {
 		// Set configuration values
-		c.configurator.SetGitHubToken(c.githubTokenInput.Value())
-		c.configurator.SetGitHubUser("user") // Hardcoded for now, would be replaced with actual user in real implementation
+		githubToken := c.githubTokenInput.Value()
+		c.configurator.SetGitHubToken(githubToken)
 		c.configurator.SetAnthropicToken(c.anthropicTokenInput.Value())
 		c.configurator.SetCLIToolPath(c.cliCommandInput.Value())
 
-		// Set budgets
+		// Get GitHub username from input field first
+		username := c.githubUsernameInput.Value()
+		
+		// If input field is empty, try to get from API
+		if username == "" {
+			if githubToken != "" {
+				// Create a temporary GitHub client to get user info
+				tempClient := github.NewClient(githubToken)
+				if user, err := tempClient.GetUserInfo(); err == nil && user.GetLogin() != "" {
+					username = user.GetLogin()
+				}
+			}
+			
+			// If still empty, use placeholder
+			if username == "" {
+				username = "ENTER_GITHUB_USERNAME_HERE"
+			}
+		}
+		
+		c.configurator.SetGitHubUser(username)
+
+		// Parse budget values from inputs
 		budgets := make(map[string]float64)
-		budgets["issue_response"] = 10.0 // Parse from input in real implementation
-		budgets["pr_creation"] = 15.0
-		budgets["test_run"] = 5.0
-		budgets["default"] = 2.0
+
+		// Parse issue response budget
+		issueResponseBudget, err := strconv.ParseFloat(c.issueResponseBudgetInput.Value(), 64)
+		if err == nil {
+			budgets["issue_response"] = issueResponseBudget
+		} else {
+			budgets["issue_response"] = 10.0 // Default if parsing fails
+		}
+
+		// Parse PR creation budget
+		prBudget, err := strconv.ParseFloat(c.prBudgetInput.Value(), 64)
+		if err == nil {
+			budgets["pr_creation"] = prBudget
+		} else {
+			budgets["pr_creation"] = 15.0 // Default if parsing fails
+		}
+
+		// Parse test run budget
+		testBudget, err := strconv.ParseFloat(c.testBudgetInput.Value(), 64)
+		if err == nil {
+			budgets["test_run"] = testBudget
+		} else {
+			budgets["test_run"] = 5.0 // Default if parsing fails
+		}
+
+		// Parse default budget
+		defaultBudget, err := strconv.ParseFloat(c.defaultBudgetInput.Value(), 64)
+		if err == nil {
+			budgets["default"] = defaultBudget
+		} else {
+			budgets["default"] = 2.0 // Default if parsing fails
+		}
+
 		c.configurator.SetTaskBudgets(budgets)
 
-		// Set default monitoring settings
-		c.configurator.SetMonitoringSettings(30, true, []string{})
+		// Set monitoring settings from the current config or defaults
+		// Get poll interval in seconds, convert to minutes for storage
+		pollIntervalSecs := 60 // Default to 60 seconds
+		if c.monitorIntervalInput.Value() != "" {
+			if val, err := strconv.Atoi(c.monitorIntervalInput.Value()); err == nil && val > 0 {
+				pollIntervalSecs = val
+			}
+		}
+		// Convert to minutes (rounded up to nearest minute)
+		pollIntervalMins := (pollIntervalSecs + 59) / 60
+		
+		repoFilter := []string{}
+		assignedOnly := true // Always monitor assigned issues only
+
+		c.configurator.SetMonitoringSettings(pollIntervalMins, true, repoFilter, assignedOnly)
 
 		// Save configuration
-		err := c.configurator.Save()
+		err = c.configurator.Save()
 
 		// Prepare result message
 		result := "Configuration saved successfully"

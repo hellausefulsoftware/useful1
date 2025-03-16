@@ -13,7 +13,7 @@ const (
 	ScreenMainMenu ScreenType = iota // Main menu screen
 	ScreenRespond                    // Response screen
 	ScreenPR                         // Pull request screen
-	ScreenTest                       // Test screen
+	ScreenTest                       // Test screen (deprecated - keeping for binary compatibility)
 	ScreenConfig                     // Configuration screen
 	ScreenMonitor                    // Monitoring screen
 )
