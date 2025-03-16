@@ -74,7 +74,25 @@ run: build
 # Install the application
 .PHONY: install
 install: build
-	cp $(BINARY_PATH) $(GOPATH)/bin/
+	@echo "Installing $(BINARY_NAME) to /usr/local/bin..."
+	@if [ "$(shell id -u)" -eq 0 ]; then \
+		cp $(BINARY_PATH) /usr/local/bin/; \
+	else \
+		echo "You need root permissions to write to /usr/local/bin"; \
+		echo "Running: sudo cp $(BINARY_PATH) /usr/local/bin/"; \
+		sudo cp $(BINARY_PATH) /usr/local/bin/; \
+	fi
+	@echo "$(BINARY_NAME) successfully installed to /usr/local/bin/"
+
+# User home directory installation (doesn't require sudo)
+.PHONY: install-user
+install-user: build
+	@echo "Installing $(BINARY_NAME) to ~/bin..."
+	@mkdir -p ~/bin
+	@cp $(BINARY_PATH) ~/bin/
+	@echo "$(BINARY_NAME) successfully installed to ~/bin/"
+	@echo "Make sure ~/bin is in your PATH by adding this to your shell configuration:"
+	@echo "export PATH=\$$PATH:~/bin"
 
 # Run tests
 .PHONY: test
@@ -170,7 +188,8 @@ help:
 	@echo "  update-deps      - Update dependencies"
 	@echo "  build            - Build the application"
 	@echo "  run              - Run the application (builds first)"
-	@echo "  install          - Install the application to GOPATH/bin"
+	@echo "  install          - Install the application to /usr/local/bin (may require sudo)"
+	@echo "  install-user     - Install the application to ~/bin (doesn't require sudo)"
 	@echo "  test             - Run tests"
 	@echo "  test-coverage    - Run tests with coverage"
 	@echo "  bench            - Run benchmarks"
