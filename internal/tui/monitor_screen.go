@@ -237,7 +237,7 @@ func (m *MonitorScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if selectedCount > 0 {
 					// Update the config with selected repositories
 					m.app.GetConfig().Monitor.RepoFilter = selectedRepos
-					
+
 					m.logs = append(m.logs, fmt.Sprintf("Set repository filter to %d repositories", selectedCount))
 					m.logs = append(m.logs, "Monitoring assigned issues only")
 
@@ -280,7 +280,7 @@ func (m *MonitorScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					// Always monitor assigned issues only
 					m.app.GetConfig().Monitor.AssignedIssuesOnly = true
 					m.logs = append(m.logs, "Monitoring assigned issues only")
-					
+
 					// Log the poll interval in seconds
 					pollIntervalSecs := m.app.GetConfig().Monitor.PollInterval * 60
 					m.logs = append(m.logs, fmt.Sprintf("Poll interval: %d seconds", pollIntervalSecs))
@@ -308,15 +308,15 @@ func (m *MonitorScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.logs = append(m.logs, fmt.Sprintf("Using filter with %d repositories",
 							len(m.app.GetConfig().Monitor.RepoFilter)))
 					}
-					
+
 					// Always check assigned issues only
 					m.app.GetConfig().Monitor.AssignedIssuesOnly = true
 					m.logs = append(m.logs, "Checking assigned issues only")
-					
+
 					// Log the poll interval in seconds
 					pollIntervalSecs := m.app.GetConfig().Monitor.PollInterval * 60
 					m.logs = append(m.logs, fmt.Sprintf("Poll interval: %d seconds", pollIntervalSecs))
-					
+
 					// Update the monitor with the new setting
 					if m.monitor != nil {
 						m.monitor = github.NewMonitor(m.app.GetConfig(), m.executor)
@@ -519,14 +519,14 @@ func (m *MonitorScreen) View() string {
 		}
 	} else if !m.repoListVisible {
 		content += theme.Subtitle.Render("GitHub Issue Monitoring") + "\n\n"
-		
+
 		// Display monitoring mode and settings
 		content += theme.Text.Render("Mode: Monitoring assigned issues only") + "\n"
-		
+
 		// Show poll interval
 		pollIntervalSecs := m.app.GetConfig().Monitor.PollInterval * 60
 		content += theme.Text.Render(fmt.Sprintf("Poll interval: %d seconds", pollIntervalSecs)) + "\n"
-		
+
 		content += theme.Text.Render("Press E to start continuous monitoring") + "\n"
 		content += theme.Text.Render("Press Enter to check issues once") + "\n\n"
 	}
@@ -609,11 +609,11 @@ func (m *MonitorScreen) checkIssues() tea.Cmd {
 
 		// Create a custom writer to capture log output
 		logCapture := newLogCapture()
-		
+
 		// Setup a new logger that uses our custom writer
 		originalOutput := m.app.GetConfig().Logging.Output
 		m.app.GetConfig().Logging.Output = logCapture
-		
+
 		// Create proper logging config
 		logConfig := &logging.Config{
 			Level:      logging.LogLevel(m.app.GetConfig().Logging.Level),
@@ -630,7 +630,7 @@ func (m *MonitorScreen) checkIssues() tea.Cmd {
 			// Simulating a check that doesn't start continuous monitoring
 			err = m.monitor.CheckOnce()
 		}
-		
+
 		// Restore original logger
 		origLogConfig := &logging.Config{
 			Level:      logging.LogLevel(m.app.GetConfig().Logging.Level),
@@ -640,9 +640,7 @@ func (m *MonitorScreen) checkIssues() tea.Cmd {
 		logging.Initialize(origLogConfig)
 
 		// Add captured logs
-		for _, line := range logCapture.GetImportantLogs() {
-			logs = append(logs, line)
-		}
+		logs = append(logs, logCapture.GetImportantLogs()...)
 
 		if err != nil {
 			logs = append(logs, "Error checking issues: "+err.Error())
@@ -672,29 +670,29 @@ func newLogCapture() *logCapture {
 func (lc *logCapture) Write(p []byte) (n int, err error) {
 	lc.mu.Lock()
 	defer lc.mu.Unlock()
-	
+
 	// Convert bytes to string
 	line := string(p)
-	
+
 	// Store the log line
 	lc.lines = append(lc.lines, line)
-	
+
 	// Don't write to stdout - we'll display in the TUI instead
 	// os.Stdout.Write(p)
-	
+
 	return len(p), nil
 }
 
 func (lc *logCapture) GetImportantLogs() []string {
 	lc.mu.Lock()
 	defer lc.mu.Unlock()
-	
+
 	var important []string
 	for _, line := range lc.lines {
 		// Check for important log messages to capture
-		shouldCapture := strings.Contains(line, "Issues summary") || 
-		                 strings.Contains(line, "Waiting before next check")
-		
+		shouldCapture := strings.Contains(line, "Issues summary") ||
+			strings.Contains(line, "Waiting before next check")
+
 		if shouldCapture {
 			// Clean up the log line (remove timestamp, level, etc.)
 			// Try JSON format first
@@ -706,8 +704,8 @@ func (lc *logCapture) GetImportantLogs() []string {
 					start := strings.Index(msgPart, "\"") + 1
 					end := strings.Index(msgPart[start:], "\"")
 					if start > 0 && end > 0 {
-						logContent := msgPart[start:start+end]
-						
+						logContent := msgPart[start : start+end]
+
 						// For waiting message, format it nicely
 						if strings.Contains(logContent, "Waiting before next check") {
 							// Extract minutes value
@@ -726,7 +724,7 @@ func (lc *logCapture) GetImportantLogs() []string {
 								}
 							}
 						}
-						
+
 						important = append(important, logContent)
 					}
 				}
@@ -735,7 +733,7 @@ func (lc *logCapture) GetImportantLogs() []string {
 				parts := strings.SplitN(line, "msg=", 2)
 				if len(parts) > 1 {
 					logContent := strings.Trim(parts[1], "\"")
-					
+
 					// For waiting message, format it nicely
 					if strings.Contains(logContent, "Waiting before next check") {
 						if strings.Contains(line, "minutes=") {
@@ -753,7 +751,7 @@ func (lc *logCapture) GetImportantLogs() []string {
 							}
 						}
 					}
-					
+
 					important = append(important, logContent)
 				}
 			} else {
@@ -762,7 +760,7 @@ func (lc *logCapture) GetImportantLogs() []string {
 			}
 		}
 	}
-	
+
 	return important
 }
 

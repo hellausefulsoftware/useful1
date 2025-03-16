@@ -36,7 +36,6 @@ type Config struct {
 	}
 	Monitor struct {
 		PollInterval       int      // in minutes
-		CheckMentions      bool     // whether to check for mentions
 		RepoFilter         []string // optional list of repositories to filter on (empty means all)
 		AssignedIssuesOnly bool     // whether to only show issues assigned to the user
 	}
@@ -199,9 +198,8 @@ func (c *Configurator) SetCLIToolPath(path string) {
 }
 
 // SetMonitoringSettings sets the issue monitoring settings
-func (c *Configurator) SetMonitoringSettings(interval int, checkMentions bool, repoFilter []string, assignedOnly bool) {
+func (c *Configurator) SetMonitoringSettings(interval int, repoFilter []string, assignedOnly bool) {
 	c.config.Monitor.PollInterval = interval
-	c.config.Monitor.CheckMentions = checkMentions
 	c.config.Monitor.RepoFilter = repoFilter
 	// Always set to true, we only want to monitor assigned issues
 	c.config.Monitor.AssignedIssuesOnly = true

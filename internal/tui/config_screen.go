@@ -74,7 +74,7 @@ func NewConfigScreen(app *App) *ConfigScreen {
 		githubTokenInput.SetValue(app.GetConfig().GitHub.Token)
 	}
 	githubTokenInput.Focus()
-	
+
 	// GitHub username input
 	githubUsernameInput := textinput.New()
 	githubUsernameInput.Placeholder = "GitHub username (required for monitoring)"
@@ -103,7 +103,7 @@ func NewConfigScreen(app *App) *ConfigScreen {
 	} else {
 		cliCommandInput.SetValue("claude --dangerously-skip-permissions")
 	}
-	
+
 	// Monitor interval input (in seconds)
 	monitorIntervalInput := textinput.New()
 	monitorIntervalInput.Placeholder = "Monitor poll interval in seconds (default: 60)"
@@ -172,7 +172,7 @@ func NewConfigScreen(app *App) *ConfigScreen {
 	if len(inputs) != fieldCount {
 		panic(fmt.Sprintf("Input field count mismatch: expected %d, got %d", fieldCount, len(inputs)))
 	}
-	
+
 	return &ConfigScreen{
 		BaseScreen:               NewBaseScreen(app, "Configuration"),
 		githubTokenInput:         githubTokenInput,
@@ -241,7 +241,7 @@ func (c *ConfigScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if c.githubTokenInput.Value() != "" && c.anthropicTokenInput.Value() != "" && c.cliCommandInput.Value() != "" {
 				// Warn if GitHub username is missing (important for monitoring)
 				if c.githubUsernameInput.Value() == "" {
-					c.githubUsernameInput.SetValue("") // Clear any value to show placeholder
+					c.githubUsernameInput.SetValue("")   // Clear any value to show placeholder
 					c.focusedInput = fieldGitHubUsername // Focus the GitHub username field
 					// Update focus
 					for i := 0; i < fieldCount; i++ {
@@ -293,7 +293,7 @@ func (c *ConfigScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			} else {
 				// Only move down if not already at the last field
-				if c.focusedInput < fieldCount - 1 {
+				if c.focusedInput < fieldCount-1 {
 					c.focusedInput++
 				} else {
 					// At the bottom field already, do nothing
@@ -464,7 +464,7 @@ func (c *ConfigScreen) View() string {
 		githubLabel = focusedStyle.Render("GitHub Token: ")
 	}
 	content += githubLabel + c.githubTokenInput.View() + "\n\n"
-	
+
 	// GitHub username
 	usernameLabel := normalStyle.Render("GitHub Username: ")
 	if c.focusedInput == fieldGitHubUsername {
@@ -490,10 +490,10 @@ func (c *ConfigScreen) View() string {
 	}
 	content += cliLabel + c.cliCommandInput.View() + "\n" +
 		theme.Faint.Render("    Enter command with arguments (default: claude --dangerously-skip-permissions)") + "\n\n"
-		
+
 	// Monitor Settings section
 	content += theme.Bold.Render("Monitor Settings:") + "\n\n"
-	
+
 	// Poll interval
 	intervalLabel := normalStyle.Render("Poll Interval (seconds): ")
 	if c.focusedInput == fieldMonitorInterval {
@@ -568,7 +568,7 @@ func (c *ConfigScreen) startExecution() tea.Cmd {
 
 		// Get GitHub username from input field first
 		username := c.githubUsernameInput.Value()
-		
+
 		// If input field is empty, try to get from API
 		if username == "" {
 			if githubToken != "" {
@@ -578,13 +578,13 @@ func (c *ConfigScreen) startExecution() tea.Cmd {
 					username = user.GetLogin()
 				}
 			}
-			
+
 			// If still empty, use placeholder
 			if username == "" {
 				username = "ENTER_GITHUB_USERNAME_HERE"
 			}
 		}
-		
+
 		c.configurator.SetGitHubUser(username)
 
 		// Parse budget values from inputs
@@ -628,17 +628,17 @@ func (c *ConfigScreen) startExecution() tea.Cmd {
 		// Get poll interval in seconds, convert to minutes for storage
 		pollIntervalSecs := 60 // Default to 60 seconds
 		if c.monitorIntervalInput.Value() != "" {
-			if val, err := strconv.Atoi(c.monitorIntervalInput.Value()); err == nil && val > 0 {
+			if val, intervalErr := strconv.Atoi(c.monitorIntervalInput.Value()); intervalErr == nil && val > 0 {
 				pollIntervalSecs = val
 			}
 		}
 		// Convert to minutes (rounded up to nearest minute)
 		pollIntervalMins := (pollIntervalSecs + 59) / 60
-		
+
 		repoFilter := []string{}
 		assignedOnly := true // Always monitor assigned issues only
 
-		c.configurator.SetMonitoringSettings(pollIntervalMins, true, repoFilter, assignedOnly)
+		c.configurator.SetMonitoringSettings(pollIntervalMins, repoFilter, assignedOnly)
 
 		// Save configuration
 		err = c.configurator.Save()
@@ -651,7 +651,7 @@ func (c *ConfigScreen) startExecution() tea.Cmd {
 
 		return executionResultMsg{
 			output: result,
-			err:    err,
+			err:    nil,
 		}
 	}
 }

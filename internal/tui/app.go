@@ -100,7 +100,7 @@ func NewApp(cfg *config.Config) *App {
 		cfg.Logging.Output = writer
 		cfg.Logging.Level = "info"
 		cfg.Logging.JSONFormat = false
-		
+
 		// Initialize logger
 		logConfig := &logging.Config{
 			Level:      logging.LogLevel(cfg.Logging.Level),

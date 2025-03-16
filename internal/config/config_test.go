@@ -141,7 +141,7 @@ func TestConfigurator(t *testing.T) {
 		"default":        0.2,
 	}
 	configurator.SetTaskBudgets(budgets)
-	configurator.SetMonitoringSettings(5, true, []string{"repo1", "repo2"})
+	configurator.SetMonitoringSettings(5, []string{"repo1", "repo2"}, true)
 
 	// Verify values are set correctly in the configurator
 	if configurator.config.GitHub.Token != "test-github-token" {
@@ -168,10 +168,6 @@ func TestConfigurator(t *testing.T) {
 	if configurator.config.Monitor.PollInterval != 5 {
 		t.Errorf("Poll interval not set correctly, got %d, want %d",
 			configurator.config.Monitor.PollInterval, 5)
-	}
-
-	if !configurator.config.Monitor.CheckMentions {
-		t.Errorf("Check mentions not set correctly, expected true")
 	}
 
 	if len(configurator.config.Monitor.RepoFilter) != 2 ||

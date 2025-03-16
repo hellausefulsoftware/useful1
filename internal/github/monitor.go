@@ -34,7 +34,7 @@ func NewMonitor(cfg *config.Config, responder models.IssueResponder) *Monitor {
 	)
 	tc := oauth2.NewClient(context.Background(), ts)
 	client := github.NewClient(tc)
-	
+
 	// Check if username is configured
 	username := cfg.GitHub.User
 	if username == "" || username == "ENTER_GITHUB_USERNAME_HERE" {
@@ -64,7 +64,7 @@ func NewMonitor(cfg *config.Config, responder models.IssueResponder) *Monitor {
 // Start begins the continuous monitoring process
 func (m *Monitor) Start() error {
 	logging.Info("Starting GitHub issue monitor")
-	logging.Info("Monitoring for mentions of user", "username", m.username)
+	logging.Info("Monitoring for issues assigned to user", "username", m.username)
 
 	if len(m.config.Monitor.RepoFilter) > 0 {
 		logging.Info("Monitoring specific repositories", "count", len(m.config.Monitor.RepoFilter))
@@ -78,7 +78,7 @@ func (m *Monitor) Start() error {
 	// Loop indefinitely, checking for new issues
 	for {
 		if err := m.checkForMentions(); err != nil {
-			logging.Error("Failed to check for mentions", "error", err)
+			logging.Error("Failed to check for assigned issues", "error", err)
 		}
 
 		// Update last checked time
@@ -97,10 +97,10 @@ type MonitorResult struct {
 	Err  error
 }
 
-// CheckOnce runs a single check for mentions
+// CheckOnce runs a single check for assigned issues
 func (m *Monitor) CheckOnce() error {
-	logging.Info("Running one-time check for mentions")
-	logging.Info("Checking for mentions of user", "username", m.username)
+	logging.Info("Running one-time check for assigned issues")
+	logging.Info("Checking for issues assigned to user", "username", m.username)
 
 	if len(m.config.Monitor.RepoFilter) > 0 {
 		logging.Info("Checking specific repositories", "count", len(m.config.Monitor.RepoFilter))
@@ -122,28 +122,28 @@ func (m *Monitor) CheckOnce() error {
 	return nil
 }
 
-// checkForMentions checks for issues where the user is assigned
+// checkForMentions checks for open issues where the user is assigned
 func (m *Monitor) checkForMentions() error {
 	// Log the username we're checking for
 	logging.Info("Checking for issues assigned to user", "username", m.username)
-	
-	// Only search for issues assigned to the user
-	query := fmt.Sprintf("assignee:%s updated:>%s is:issue",
+
+	// Only search for open issues assigned to the user
+	query := fmt.Sprintf("assignee:%s updated:>%s is:issue is:open",
 		m.username,
 		m.lastChecked.Format(time.RFC3339),
 	)
-	
+
 	logging.Info("Using search query", "query", query)
-	
+
 	// Create full URL used for debug purposes
 	fullURL := fmt.Sprintf("https://api.github.com/search/issues?q=%s", url.QueryEscape(query))
 	logging.Info("Debug API URL", "url", fullURL)
 
 	// Note about repo filtering:
 	// Instead of filtering in the query which can cause permission issues,
-	// we'll get all mentions and filter by repo in our code
+	// we'll get all assigned issues and filter by repo in our code
 	// This avoids GitHub API search restrictions while still providing the filtering
-	
+
 	// Log what repositories we'll be filtering for
 	if len(m.config.Monitor.RepoFilter) > 0 {
 		logging.Info("Will filter results for repositories", "repos", strings.Join(m.config.Monitor.RepoFilter, ", "))
@@ -172,26 +172,26 @@ func (m *Monitor) checkForMentions() error {
 
 	// Log response info for debugging
 	if resp != nil {
-		logging.Info("API response info", 
-			"status", resp.Status, 
+		logging.Info("API response info",
+			"status", resp.Status,
 			"rate_limit", resp.Rate.Limit,
 			"rate_remaining", resp.Rate.Remaining)
 	}
 
-	logging.Info("Found issues with mentions according to GitHub API", "count", *result.Total)
+	logging.Info("Found assigned issues according to GitHub API", "count", *result.Total)
 	logging.Info("Note: GitHub search may include inaccessible repos or false positives")
-	
+
 	// Log username to verify it matches what GitHub expects
 	logging.Info("Username being used for search", "username", m.username)
-	
+
 	var accessibleIssues int
 	var matchingRepoIssues int
-	
+
 	// Log details about each issue found
 	if *result.Total > 0 {
 		logging.Info("Issues found in API results:")
 		for i, issue := range result.Issues {
-			logging.Info(fmt.Sprintf("Issue #%d", i+1), 
+			logging.Info(fmt.Sprintf("Issue #%d", i+1),
 				"number", *issue.Number,
 				"title", *issue.Title,
 				"url", *issue.HTMLURL,
@@ -218,28 +218,28 @@ func (m *Monitor) checkForMentions() error {
 		accessibleIssues++
 		owner := parts[3]
 		repo := parts[4]
-		
-		// Apply repository filter if configured 
+
+		// Apply repository filter if configured
 		if len(m.config.Monitor.RepoFilter) > 0 {
 			repoName := owner + "/" + repo
 			repoFound := false
-			
+
 			for _, allowedRepo := range m.config.Monitor.RepoFilter {
 				if strings.EqualFold(allowedRepo, repoName) {
 					repoFound = true
 					break
 				}
 			}
-			
+
 			// Skip issues that don't match our repository filter
 			if !repoFound {
-				logging.Debug("Issue does not match repository filter, skipping", 
-					"repo", repoName, 
+				logging.Debug("Issue does not match repository filter, skipping",
+					"repo", repoName,
 					"issue", *issue.Number)
 				continue
 			}
 		}
-		
+
 		matchingRepoIssues++
 
 		// Check if we've already processed this issue recently
@@ -279,11 +279,11 @@ func (m *Monitor) checkForMentions() error {
 
 	// Cleanup old processed IDs to prevent memory leaks
 	m.cleanupProcessedIDs()
-	
+
 	// Create a summary message for both logging and TUI display
-	summaryMsg := fmt.Sprintf("Issues summary: %d reported by GitHub, %d accessible, %d matching repo filter", 
+	summaryMsg := fmt.Sprintf("Issues summary: %d reported by GitHub, %d accessible, %d matching repo filter",
 		*result.Total, accessibleIssues, matchingRepoIssues)
-	
+
 	// Log the summary - this is a special log that will be captured by the TUI
 	logging.Info(summaryMsg)
 
@@ -399,17 +399,17 @@ func (m *Monitor) processIssue(issue *models.Issue) error {
 		// Check if this issue belongs to one of our filtered repositories
 		repoName := issue.Owner + "/" + issue.Repo
 		repoFound := false
-		
+
 		for _, allowedRepo := range m.config.Monitor.RepoFilter {
 			if strings.EqualFold(allowedRepo, repoName) {
 				repoFound = true
 				break
 			}
 		}
-		
+
 		if !repoFound {
-			logging.Debug("Issue does not match repository filter, skipping", 
-				"repo", repoName, 
+			logging.Debug("Issue does not match repository filter, skipping",
+				"repo", repoName,
 				"allowed_repos", strings.Join(m.config.Monitor.RepoFilter, ", "))
 			return nil
 		}
@@ -479,28 +479,28 @@ func (m *Monitor) processIssue(issue *models.Issue) error {
 	return nil
 }
 
-// GetRecentMentions gets the most recent mentions for reporting
-func (m *Monitor) GetRecentMentions(limit int) ([]*models.Issue, error) {
-	// Search for recent issues with mentions
-	query := fmt.Sprintf("mentions:%s updated:>%s is:issue",
+// GetRecentAssignedIssues gets the most recent assigned issues for reporting
+func (m *Monitor) GetRecentAssignedIssues(limit int) ([]*models.Issue, error) {
+	// Search for recent open issues assigned to the user
+	query := fmt.Sprintf("assignee:%s updated:>%s is:issue is:open",
 		m.username,
 		time.Now().Add(-7*24*time.Hour).Format(time.RFC3339), // Last 7 days
 	)
 
 	// Note about repo filtering:
 	// Instead of filtering in the query which can cause permission issues,
-	// we'll get all mentions and filter by repo in our code
+	// we'll get all assigned issues and filter by repo in our code
 	// This avoids GitHub API search restrictions while still providing the filtering
-	
+
 	// Log what repositories we'll be filtering for
 	if len(m.config.Monitor.RepoFilter) > 0 {
-		logging.Info("Will filter recent mentions for repositories", "repos", strings.Join(m.config.Monitor.RepoFilter, ", "))
+		logging.Info("Will filter recent assigned issues for repositories", "repos", strings.Join(m.config.Monitor.RepoFilter, ", "))
 	} else {
-		logging.Info("No repository filter applied, will show all recent mentions")
+		logging.Info("No repository filter applied, will show all recent assigned issues")
 	}
 
 	// Search for issues
-	logging.Info("Searching for recent mentions", "query", query)
+	logging.Info("Searching for recent assigned issues", "query", query)
 
 	searchOpts := &github.SearchOptions{
 		Sort:  "updated",
@@ -512,7 +512,7 @@ func (m *Monitor) GetRecentMentions(limit int) ([]*models.Issue, error) {
 
 	result, _, err := m.client.Search.Issues(context.Background(), query, searchOpts)
 	if err != nil {
-		return nil, fmt.Errorf("error searching for recent mentions: %w", err)
+		return nil, fmt.Errorf("error searching for recent assigned issues: %w", err)
 	}
 
 	var issues []*models.Issue
@@ -531,22 +531,22 @@ func (m *Monitor) GetRecentMentions(limit int) ([]*models.Issue, error) {
 		}
 		owner := parts[3]
 		repo := parts[4]
-		
+
 		// Apply repository filter if configured
 		if len(m.config.Monitor.RepoFilter) > 0 {
 			repoName := owner + "/" + repo
 			repoFound := false
-			
+
 			for _, allowedRepo := range m.config.Monitor.RepoFilter {
 				if strings.EqualFold(allowedRepo, repoName) {
 					repoFound = true
 					break
 				}
 			}
-			
+
 			// Skip issues that don't match our repository filter
 			if !repoFound {
-				logging.Debug("Recent mention does not match repository filter, skipping", 
+				logging.Debug("Recent assigned issue does not match repository filter, skipping",
 					"repo", repoName)
 				continue
 			}
@@ -586,7 +586,6 @@ func (m *Monitor) GetStats() map[string]interface{} {
 		"issues_processed": len(m.processedIDs),
 		"username":         m.username,
 		"poll_interval":    m.config.Monitor.PollInterval,
-		"check_mentions":   m.config.Monitor.CheckMentions,
 		"repo_filters":     m.config.Monitor.RepoFilter,
 	}
 

@@ -151,8 +151,8 @@ func main() {
 
 	monitorCmd := &cobra.Command{
 		Use:   "monitor",
-		Short: "Monitor GitHub issues for mentions",
-		Long:  `Start monitoring GitHub issues for user mentions and respond automatically`,
+		Short: "Monitor GitHub issues assigned to user",
+		Long:  `Start monitoring GitHub issues assigned to the user and respond automatically`,
 		Run: func(cmd *cobra.Command, args []string) {
 			if programmatic {
 				// Run CLI executor in programmatic mode
