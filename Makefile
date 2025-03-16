@@ -104,8 +104,16 @@ test:
 .PHONY: test-coverage
 test-coverage:
 	@echo "Running tests with coverage..."
-	$(GOTEST) -v -race -coverprofile=coverage.out $(PKG_LIST)
+	$(GOTEST) -v -coverprofile=coverage.out $(PKG_LIST)
 	$(GOCMD) tool cover -html=coverage.out -o coverage.html
+	$(GOCMD) tool cover -func=coverage.out
+	@echo "Coverage report generated as coverage.html"
+
+# Run tests with race detection (requires CGO)
+.PHONY: test-race
+test-race:
+	@echo "Running tests with race detection..."
+	CGO_ENABLED=1 $(GOTEST) -v -race $(PKG_LIST)
 
 # Benchmarking
 .PHONY: bench
@@ -191,7 +199,8 @@ help:
 	@echo "  install          - Install the application to /usr/local/bin (may require sudo)"
 	@echo "  install-user     - Install the application to ~/bin (doesn't require sudo)"
 	@echo "  test             - Run tests"
-	@echo "  test-coverage    - Run tests with coverage"
+	@echo "  test-coverage    - Run tests with coverage and generate a report"
+	@echo "  test-race        - Run tests with race detection (requires CGO)"
 	@echo "  bench            - Run benchmarks"
 	@echo "  lint             - Run linters"
 	@echo "  fmt              - Format code"
