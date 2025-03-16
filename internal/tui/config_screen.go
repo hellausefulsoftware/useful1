@@ -24,6 +24,8 @@ type ConfigScreen struct {
 	executing              bool
 	result                 string
 	resultError            error
+	showGithubHelp         bool
+	showAnthropicHelp      bool
 }
 
 // NewConfigScreen creates a new configuration screen
@@ -105,6 +107,8 @@ func NewConfigScreen(app *App) *ConfigScreen {
 		focusedInput:           0,
 		configurator:           config.NewConfigurator(),
 		executing:              false,
+		showGithubHelp:         false,
+		showAnthropicHelp:      false,
 	}
 }
 
@@ -113,6 +117,8 @@ func (c *ConfigScreen) Init() tea.Cmd {
 	c.executing = false
 	c.result = ""
 	c.resultError = nil
+	c.showGithubHelp = false
+	c.showAnthropicHelp = false
 	return textinput.Blink
 }
 
@@ -134,9 +140,37 @@ func (c *ConfigScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Non-execution state key handling
 		switch {
 		case key.Matches(msg, c.app.keyMap.Back):
+			// If showing help, hide it instead of going back
+			if c.showGithubHelp || c.showAnthropicHelp {
+				c.showGithubHelp = false
+				c.showAnthropicHelp = false
+				return c, nil
+			}
 			return c, c.app.ChangeScreen(ScreenMainMenu)
 		
+		// Handle help toggle with different hotkeys
+		case key.Matches(msg, key.NewBinding(key.WithKeys("g", "G"))):
+			// Toggle GitHub help
+			c.showGithubHelp = !c.showGithubHelp
+			if c.showGithubHelp {
+				c.showAnthropicHelp = false // Only show one help at a time
+			}
+			return c, nil
+			
+		case key.Matches(msg, key.NewBinding(key.WithKeys("a", "A"))):
+			// Toggle Anthropic help
+			c.showAnthropicHelp = !c.showAnthropicHelp
+			if c.showAnthropicHelp {
+				c.showGithubHelp = false // Only show one help at a time
+			}
+			return c, nil
+		
 		case key.Matches(msg, c.app.keyMap.Up, c.app.keyMap.Down):
+			// If showing help, don't change focus
+			if c.showGithubHelp || c.showAnthropicHelp {
+				return c, nil
+			}
+			
 			// Cycle through inputs
 			if key.Matches(msg, c.app.keyMap.Up) {
 				c.focusedInput--
@@ -230,6 +264,45 @@ func (c *ConfigScreen) View() string {
 		return lipgloss.NewStyle().Width(c.app.GetWidth()).Align(lipgloss.Left).Render(content)
 	}
 	
+	// Show GitHub help screen if enabled
+	if c.showGithubHelp {
+		content := theme.Title.Render("GitHub Token Guide") + "\n\n" +
+			theme.Bold.Render("To get a GitHub Personal Access Token:") + "\n\n" +
+			theme.Text.Render("1. Go to https://github.com/settings/tokens") + "\n" +
+			theme.Text.Render("2. Click 'Generate new token' / 'Generate new token (classic)'") + "\n" +
+			theme.Text.Render("3. Give it a name like 'Useful1 CLI'") + "\n" +
+			theme.Text.Render("4. Set an expiration period (e.g., 90 days)") + "\n" +
+			theme.Text.Render("5. Select these scopes:") + "\n" +
+			theme.Text.Render("   - repo (all)") + "\n" +
+			theme.Text.Render("   - workflow") + "\n" +
+			theme.Text.Render("   - read:org") + "\n" +
+			theme.Text.Render("   - user") + "\n" +
+			theme.Text.Render("6. Click 'Generate token'") + "\n" +
+			theme.Text.Render("7. Copy the generated token (you will only see it once!)") + "\n\n" +
+			theme.Bold.Render("The token should look something like:") + "\n" +
+			theme.Text.Render("ghp_1a2b3c4d5e6f7g8h9i0j1k2l3m4n5o6p7q8r") + "\n\n" +
+			theme.Faint.Render("Press ESC to go back to the configuration screen")
+		
+		return lipgloss.NewStyle().Width(c.app.GetWidth()).Align(lipgloss.Left).Render(content)
+	}
+	
+	// Show Anthropic help screen if enabled
+	if c.showAnthropicHelp {
+		content := theme.Title.Render("Anthropic API Key Guide") + "\n\n" +
+			theme.Bold.Render("To get an Anthropic API Key:") + "\n\n" +
+			theme.Text.Render("1. Go to https://console.anthropic.com/") + "\n" +
+			theme.Text.Render("2. Create an account or sign in") + "\n" +
+			theme.Text.Render("3. Navigate to 'API Keys' in the dashboard") + "\n" +
+			theme.Text.Render("4. Click 'Create Key'") + "\n" +
+			theme.Text.Render("5. Give it a name like 'Useful1 CLI'") + "\n" +
+			theme.Text.Render("6. Copy the generated API key (you will only see it once!)") + "\n\n" +
+			theme.Bold.Render("The API key should look something like:") + "\n" +
+			theme.Text.Render("sk-ant-api03-xxxxxxxxxxxx") + "\n\n" +
+			theme.Faint.Render("Press ESC to go back to the configuration screen")
+		
+		return lipgloss.NewStyle().Width(c.app.GetWidth()).Align(lipgloss.Left).Render(content)
+	}
+	
 	// Normal input view
 	content := c.RenderTitle() + "\n\n" +
 		theme.Subtitle.Render("Enter configuration details:") + "\n\n"
@@ -245,14 +318,16 @@ func (c *ConfigScreen) View() string {
 	if c.focusedInput == 0 {
 		githubLabel = focusedStyle.Render("GitHub Token: ")
 	}
-	content += githubLabel + c.githubTokenInput.View() + "\n\n"
+	content += githubLabel + c.githubTokenInput.View() + " " + 
+		theme.Faint.Render("(Press 'g' for help)") + "\n\n"
 	
 	// Anthropic token
 	anthropicLabel := normalStyle.Render("Anthropic API Key: ")
 	if c.focusedInput == 1 {
 		anthropicLabel = focusedStyle.Render("Anthropic API Key: ")
 	}
-	content += anthropicLabel + c.anthropicTokenInput.View() + "\n\n"
+	content += anthropicLabel + c.anthropicTokenInput.View() + " " + 
+		theme.Faint.Render("(Press 'a' for help)") + "\n\n"
 	
 	// CLI section
 	content += theme.Bold.Render("CLI Tool:") + "\n\n"
@@ -296,17 +371,18 @@ func (c *ConfigScreen) View() string {
 	content += defaultLabel + c.defaultBudgetInput.View() + "\n\n"
 	
 	// Instructions
-	content += theme.Faint.Render("Use ↑/↓ to navigate, E to save configuration, ESC to go back") + "\n\n"
+	content += theme.Faint.Render("Use ↑/↓ to navigate, E to save configuration, ESC to go back") + "\n" +
+		theme.Faint.Render("Press 'g' for GitHub token help, 'a' for Anthropic API key help") + "\n\n"
 	
 	// Footer
 	content += c.RenderFooter()
 	
-	return lipgloss.NewStyle().MaxWidth(c.app.GetWidth()).Render(content)
+	return lipgloss.NewStyle().Width(c.app.GetWidth()).Align(lipgloss.Left).Render(content)
 }
 
 // ShortHelp returns keybindings to be shown in the help menu
 func (c *ConfigScreen) ShortHelp() []key.Binding {
-	return []key.Binding{
+	keys := []key.Binding{
 		c.app.keyMap.Up,
 		c.app.keyMap.Down,
 		c.app.keyMap.Execute,
@@ -314,6 +390,19 @@ func (c *ConfigScreen) ShortHelp() []key.Binding {
 		c.app.keyMap.Help,
 		c.app.keyMap.Quit,
 	}
+	
+	// Add custom keys for help screens
+	keys = append(keys, key.NewBinding(
+		key.WithKeys("g"),
+		key.WithHelp("g", "GitHub token help"),
+	))
+	
+	keys = append(keys, key.NewBinding(
+		key.WithKeys("a"),
+		key.WithHelp("a", "Anthropic key help"),
+	))
+	
+	return keys
 }
 
 // startExecution begins the execution process
