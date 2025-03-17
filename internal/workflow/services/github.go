@@ -667,6 +667,270 @@ func (s *GitHubImplementationService) getIssueDetails(client *github.Client, own
 	return result, nil
 }
 
+// CreatePullRequestForIssue creates a PR specifically linked to an issue
+func (s *GitHubImplementationService) CreatePullRequestForIssue(owner, repo, branch, base string, issueNumber int) (*github.PullRequest, error) {
+	// Get issue details first
+	githubClient := createGitHubClient(s.config)
+	issue, _, err := githubClient.Issues.Get(context.Background(), owner, repo, issueNumber)
+	if err != nil {
+		logging.Error("Failed to get issue details", 
+			"error", err,
+			"owner", owner,
+			"repo", repo,
+			"issue", issueNumber)
+		return nil, fmt.Errorf("failed to get issue details: %w", err)
+	}
+	
+	// Use issue title as PR title
+	title := fmt.Sprintf("Fix #%d: %s", issueNumber, *issue.Title)
+	
+	// Create an issue model for anthropic
+	issueModel := &models.Issue{
+		Owner:  owner,
+		Repo:   repo,
+		Number: issueNumber,
+		Title:  *issue.Title,
+		Body:   *issue.Body,
+	}
+	
+	// Generate PR description using Anthropic API
+	var body string
+	if s.config.Anthropic.Token != "" {
+		// Create Anthropic analyzer
+		analyzer := anthropic.NewAnalyzer(s.config)
+		logging.Info("Created Anthropic analyzer for PR description", 
+			"token_available", s.config.Anthropic.Token != "",
+			"token_length", len(s.config.Anthropic.Token))
+		
+		// Generate AI-powered PR description with issue context
+		aiGeneratedPR, err := analyzer.GeneratePRDescription(issueModel, "", []string{})
+		if err != nil {
+			logging.Warn("Failed to generate PR description with Anthropic API, using simple description",
+				"error", err)
+			body = fmt.Sprintf("Fixes #%d", issueNumber)
+		} else {
+			body = aiGeneratedPR
+			logging.Info("Successfully generated PR description with Anthropic API", 
+				"description_length", len(body))
+		}
+	} else {
+		body = fmt.Sprintf("Fixes #%d", issueNumber)
+	}
+	
+	// Add footer
+	body += fmt.Sprintf("\n\nCloses #%d\n\n**This PR was generated using https://github.com/hellausefulsoftware/useful1**", issueNumber)
+	
+	// Call the regular PR creation with the issue-specific information
+	return s.createPullRequestInternal(owner, repo, branch, base, title, body, issueNumber)
+}
+
+// createPullRequestInternal is a shared implementation for creating PRs
+func (s *GitHubImplementationService) createPullRequestInternal(owner, repo, branch, base, title, body string, issueNum int) (*github.PullRequest, error) {
+	logging.Info("Creating pull request",
+		"owner", owner, 
+		"repo", repo,
+		"branch", branch,
+		"base", base,
+		"title", title,
+		"issue", issueNum)
+
+	// Create the GitHub client
+	githubClient := createGitHubClient(s.config)
+
+	// Call GitHub API to create the PR
+	newPR := &github.NewPullRequest{
+		Title: github.String(title),
+		Body:  github.String(body),
+		Head:  github.String(branch),
+		Base:  github.String(base),
+		Draft: github.Bool(true), // Create as draft by default
+	}
+
+	logging.Info("Making GitHub API call to create PR",
+		"owner", owner,
+		"repo", repo,
+		"head", branch,
+		"base", base)
+
+	pr, resp, err := githubClient.PullRequests.Create(
+		context.Background(),
+		owner,
+		repo,
+		newPR,
+	)
+
+	if err != nil {
+		// Log more details about the error
+		if resp != nil {
+			logging.Error("GitHub API error details",
+				"status", resp.Status,
+				"rate_limit", resp.Rate.Limit,
+				"rate_remaining", resp.Rate.Remaining)
+		}
+
+		// Handle common errors
+		if strings.Contains(err.Error(), "No commits between") {
+			logging.Warn("Cannot create PR: No commits between branches",
+				"head", branch,
+				"base", base)
+			return nil, fmt.Errorf("cannot create draft PR: no commits between branches: %w", err)
+		}
+
+		if strings.Contains(err.Error(), "A pull request already exists") {
+			logging.Warn("Cannot create PR: A pull request already exists for these branches",
+				"head", branch,
+				"base", base)
+			return nil, fmt.Errorf("cannot create draft PR: a pull request already exists: %w", err)
+		}
+
+		return nil, fmt.Errorf("failed to create PR: %w", err)
+	}
+
+	logging.Info("Successfully created PR",
+		"pr_number", *pr.Number,
+		"pr_url", *pr.HTMLURL)
+		
+	// If we have an issue number, post a comment to the issue
+	if issueNum > 0 {
+		// Format PR notification comment
+		commentMsg := fmt.Sprintf("🚀 A pull request has been created to address this issue: [#%d](%s)\n\nThis PR was created using AI assistance through useful1.", 
+			*pr.Number, 
+			*pr.HTMLURL)
+			
+		// Post comment to the issue
+		err := s.RespondToIssue(owner, repo, issueNum, commentMsg)
+		if err != nil {
+			logging.Warn("Failed to post PR notification comment to issue", 
+				"error", err,
+				"issue", issueNum,
+				"pr", *pr.Number)
+			// We don't want to fail the PR creation just because the comment failed
+			// so we just log a warning here
+		} else {
+			logging.Info("Posted PR notification comment to issue", 
+				"issue", issueNum,
+				"pr", *pr.Number)
+		}
+	}
+
+	return pr, nil
+}
+
+// CreatePullRequest creates a new pull request with AI-generated description
+func (s *GitHubImplementationService) CreatePullRequest(owner, repo, branch, base, title string) (*github.PullRequest, error) {
+	logging.Info("Creating pull request",
+		"owner", owner, 
+		"repo", repo,
+		"branch", branch,
+		"base", base,
+		"title", title)
+
+	// Extract issue number from title if present
+	issueNum := 0
+	if strings.Contains(title, "#") {
+		parts := strings.Split(title, "#")
+		if len(parts) > 1 {
+			numStr := strings.Split(parts[1], " ")[0]
+			num, err := strconv.Atoi(numStr)
+			if err == nil {
+				issueNum = num
+			}
+		}
+	}
+
+	// Create a minimal issue model for analysis
+	issue := &models.Issue{
+		Owner:  owner,
+		Repo:   repo,
+		Number: issueNum,
+		Title:  title,
+		Body:   fmt.Sprintf("Branch: %s\nBase: %s", branch, base),
+	}
+
+	// Generate PR description using Anthropic API
+	var body string
+	
+	if s.config.Anthropic.Token != "" {
+		// Create Anthropic analyzer with proper config
+		analyzer := anthropic.NewAnalyzer(s.config)
+		logging.Info("Created Anthropic analyzer for PR description",
+			"token_available", s.config.Anthropic.Token != "",
+			"token_length", len(s.config.Anthropic.Token))
+
+		// Get changed files for context (if available)
+		changedFiles := []string{}
+		
+		// If issue number available, try to get full issue details
+		if issueNum > 0 {
+			githubClient := createGitHubClient(s.config)
+			fullIssue, err := s.getIssueDetails(githubClient, owner, repo, issueNum)
+			if err == nil {
+				issue = fullIssue
+			}
+		}
+
+		// Generate AI-powered PR description
+		aiGeneratedPR, err := analyzer.GeneratePRDescription(issue, "", changedFiles)
+		if err != nil {
+			logging.Warn("Failed to generate PR description with Anthropic API, using simple description",
+				"error", err)
+			body = fmt.Sprintf("PR for %s", title)
+		} else {
+			body = aiGeneratedPR
+			logging.Info("Successfully generated PR description with Anthropic API",
+				"description_length", len(body))
+		}
+	} else {
+		body = fmt.Sprintf("PR for %s", title)
+	}
+
+	// Add footer
+	body += "\n\n**This PR was generated using https://github.com/hellausefulsoftware/useful1**"
+
+	// Call the shared implementation
+	return s.createPullRequestInternal(owner, repo, branch, base, title, body, issueNum)
+}
+
+// RespondToIssue posts a comment to a GitHub issue
+func (s *GitHubImplementationService) RespondToIssue(owner, repo string, issueNumber int, comment string) error {
+	logging.Info("Responding to GitHub issue",
+		"owner", owner,
+		"repo", repo,
+		"issue", issueNumber,
+		"comment_length", len(comment))
+	
+	// Create GitHub client
+	githubClient := createGitHubClient(s.config)
+	
+	// Post the comment
+	resp, _, err := githubClient.Issues.CreateComment(
+		context.Background(),
+		owner,
+		repo,
+		issueNumber,
+		&github.IssueComment{
+			Body: github.String(comment),
+		},
+	)
+	
+	if err != nil {
+		logging.Error("Failed to post comment to issue", 
+			"error", err,
+			"owner", owner,
+			"repo", repo,
+			"issue", issueNumber)
+		return fmt.Errorf("failed to post comment to issue: %w", err)
+	}
+	
+	logging.Info("Successfully posted comment to issue",
+		"comment_id", resp.GetID(),
+		"owner", owner,
+		"repo", repo,
+		"issue", issueNumber)
+	
+	return nil
+}
+
 // cloneFreshRepository clones a fresh git repository
 func (s *GitHubImplementationService) cloneFreshRepository(repoURL, repoDir, branch string) error {
 	// Clone the repository - let git clone create the directory structure

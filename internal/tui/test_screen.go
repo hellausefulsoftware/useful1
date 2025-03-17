@@ -142,7 +142,7 @@ func (t *TestScreen) ShortHelp() []key.Binding {
 func (t *TestScreen) startExecution() tea.Cmd {
 	return func() tea.Msg {
 		// Get the input values
-		testSuite := t.suiteInput.Value()
+			_ = t.suiteInput.Value() // testSuite is unused now
 
 		// Check if executor is available
 		if t.executor == nil {
@@ -153,7 +153,7 @@ func (t *TestScreen) startExecution() tea.Cmd {
 		}
 
 		// Execute the command
-		err := t.executor.RunTests(testSuite)
+		err := fmt.Errorf("test execution functionality has been moved to the workflow package")
 
 		// Prepare result message
 		result := "Tests completed successfully"

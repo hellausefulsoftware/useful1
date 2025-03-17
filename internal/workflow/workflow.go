@@ -2,6 +2,7 @@
 package workflow
 
 import (
+	"github.com/google/go-github/v45/github"
 	"github.com/hellausefulsoftware/useful1/internal/config"
 	"github.com/hellausefulsoftware/useful1/internal/workflow/services"
 )
@@ -36,6 +37,21 @@ func (w *ImplementationWorkflow) GenerateBranchAndTitle(owner, repo, title, body
 // CreateImplementationPlan creates and executes an implementation plan
 func (w *ImplementationWorkflow) CreateImplementationPlan(owner, repo, branchName string, issueNumber int) error {
 	return w.implementationService.CreateImplementationPromptAndExecute(owner, repo, branchName, issueNumber)
+}
+
+// CreatePullRequest creates a new pull request with AI-generated description
+func (w *ImplementationWorkflow) CreatePullRequest(owner, repo, branch, base, title string) (*github.PullRequest, error) {
+	return w.implementationService.CreatePullRequest(owner, repo, branch, base, title)
+}
+
+// CreatePullRequestForIssue creates a PR specifically linked to an issue
+func (w *ImplementationWorkflow) CreatePullRequestForIssue(owner, repo, branch, base string, issueNumber int) (*github.PullRequest, error) {
+	return w.implementationService.CreatePullRequestForIssue(owner, repo, branch, base, issueNumber)
+}
+
+// RespondToIssue posts a comment to a GitHub issue
+func (w *ImplementationWorkflow) RespondToIssue(owner, repo string, issueNumber int, comment string) error {
+	return w.implementationService.RespondToIssue(owner, repo, issueNumber, comment)
 }
 
 // CreateAndImplementIssue creates a branch, implementation plan, and executes it

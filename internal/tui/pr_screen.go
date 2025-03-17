@@ -8,6 +8,7 @@ import (
 	"github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/hellausefulsoftware/useful1/internal/cli"
+	"github.com/hellausefulsoftware/useful1/internal/workflow"
 )
 
 // PRScreen is the screen for creating pull requests
@@ -232,13 +233,39 @@ func (p *PRScreen) startExecution() tea.Cmd {
 			}
 		}
 
-		// Execute the command
-		err := p.executor.CreatePullRequest(branch, base, title)
-
+		// Get the config from app
+		config := p.app.GetConfig()
+		if config == nil {
+			return executionResultMsg{
+				output: "Error: Configuration not found. Please run 'useful1 config' first",
+				err:    fmt.Errorf("configuration not found"),
+			}
+		}
+		
+		// Get owner and repo from config
+		owner := config.GitHub.User
+			repo := "useful1" // Hard-coded for now - would come from config or selection
+		
+		if owner == "" {
+			return executionResultMsg{
+				output: "Error: Missing GitHub owner or repo in config",
+				err:    fmt.Errorf("missing GitHub owner or repo in config"),
+			}
+		}
+		
+		// Create workflow instance
+		w := workflow.NewImplementationWorkflow(config)
+		
+		// Create the pull request
+		pr, err := w.CreatePullRequest(owner, repo, branch, base, title)
+		
 		// Prepare result message
-		result := "Successfully created pull request"
+		var result string
 		if err != nil {
 			result = "Error: " + err.Error()
+		} else {
+			result = fmt.Sprintf("Successfully created pull request #%d\nURL: %s", 
+				*pr.Number, *pr.HTMLURL)
 		}
 
 		return executionResultMsg{

@@ -200,7 +200,7 @@ func (r *RespondScreen) startExecution() tea.Cmd {
 	return func() tea.Msg {
 		// Get the input values
 		issueNumber := r.issueInput.Value()
-		templateName := r.templateInput.Value()
+			_ = r.templateInput.Value() // templateName is unused now
 
 		// Check if executor is available
 		if r.executor == nil {
@@ -211,7 +211,7 @@ func (r *RespondScreen) startExecution() tea.Cmd {
 		}
 
 		// Execute the command
-		err := r.executor.RespondToIssue(issueNumber, templateName)
+		err := fmt.Errorf("issue response functionality has been moved to the workflow package")
 
 		// Prepare result message
 		result := "Successfully responded to issue #" + issueNumber

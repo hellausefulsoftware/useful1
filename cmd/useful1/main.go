@@ -7,6 +7,7 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/hellausefulsoftware/useful1/internal/cli"
 	"github.com/hellausefulsoftware/useful1/internal/common/vcs"
@@ -328,57 +329,9 @@ func runCLIExecutor(cmd *cobra.Command, screenType tui.ScreenType) {
 	// Process command based on screen type
 	var cmdErr error
 	switch screenType {
-	case tui.ScreenRespond:
-		// Extract values needed for respond command
-		issueNumber, err := flags.GetString("issue")
-		if err != nil {
-			cmdErr = fmt.Errorf("failed to get issue parameter: %w", err)
-			break
-		}
-		issueFile, err := flags.GetString("issue-file")
-		if err != nil {
-			cmdErr = fmt.Errorf("failed to get issue-file parameter: %w", err)
-			break
-		}
-		owner, err := flags.GetString("owner")
-		if err != nil {
-			cmdErr = fmt.Errorf("failed to get owner parameter: %w", err)
-			break
-		}
-		repo, err := flags.GetString("repo")
-		if err != nil {
-			cmdErr = fmt.Errorf("failed to get repo parameter: %w", err)
-			break
-		}
-
-		if issueFile != "" && owner != "" && repo != "" {
-			// For issue text in a file
-			issueNum, err := flags.GetInt("number")
-			if err != nil {
-				cmdErr = fmt.Errorf("failed to get number parameter: %w", err)
-				break
-			}
-
-			// Read issue text from file
-			issueText, err := os.ReadFile(issueFile)
-			if err != nil {
-				cmdErr = fmt.Errorf("failed to read issue file: %w", err)
-				break
-			}
-
-			cmdErr = executor.RespondToIssueText(owner, repo, issueNum, string(issueText))
-		} else if issueNumber != "" {
-			// For direct issue number
-			template, err := flags.GetString("template")
-			if err != nil {
-				cmdErr = fmt.Errorf("failed to get template parameter: %w", err)
-				break
-			}
-			cmdErr = executor.RespondToIssue(issueNumber, template)
-		} else {
-			cmdErr = fmt.Errorf("missing required arguments: issue or issue-file with owner/repo/number")
-		}
-
+		case tui.ScreenRespond:
+			// Issue response functionality has been moved to workflow package
+			cmdErr = fmt.Errorf("issue response functionality has been moved to the workflow package")
 	case tui.ScreenPR:
 		// Extract values needed for PR command
 		branch, err := flags.GetString("branch")
@@ -406,16 +359,52 @@ func runCLIExecutor(cmd *cobra.Command, screenType tui.ScreenType) {
 			base = "main" // Default base branch
 		}
 
-		cmdErr = executor.CreatePullRequest(branch, base, title)
+		// Create workflow instance and use it to create PR
+		w := workflow.NewImplementationWorkflow(cfg)
+		
+		// Get owner and repo from config
+		owner := cfg.GitHub.User
+			repo := "useful1" // Hard-coded for now - would come from selection
+		
+		if owner == "" {
+			cmdErr = fmt.Errorf("missing GitHub owner or repo in config")
+			break
+		}
+		
+		// Create the pull request
+		pr, err := w.CreatePullRequest(owner, repo, branch, base, title)
+		if err != nil {
+			cmdErr = fmt.Errorf("failed to create pull request: %w", err)
+			break
+		}
+		
+		// Output JSON response
+		response := map[string]interface{}{
+			"status":    "success",
+			"branch":    branch,
+			"base":      base,
+			"title":     title,
+			"pr_number": *pr.Number,
+			"pr_url":    *pr.HTMLURL,
+			"timestamp": time.Now().Format(time.RFC3339),
+		}
+		
+		jsonResponse, err := json.Marshal(response)
+		if err != nil {
+			cmdErr = fmt.Errorf("error formatting JSON response: %w", err)
+			break
+		}
+		
+		fmt.Println(string(jsonResponse))
 
 	case tui.ScreenTest:
 		// Extract values needed for test command
-		suite, err := flags.GetString("suite")
+		_, err := flags.GetString("suite")
 		if err != nil {
 			cmdErr = fmt.Errorf("failed to get suite parameter: %w", err)
 			break
 		}
-		cmdErr = executor.RunTests(suite)
+		cmdErr = fmt.Errorf("test execution functionality has been moved to the workflow package")
 
 	case tui.ScreenConfig:
 		// Config shows success in CLI mode since config is already loaded
@@ -585,25 +574,22 @@ func runCLIExecutor(cmd *cobra.Command, screenType tui.ScreenType) {
 				// Continue anyway - we'll still create the PR
 			}
 
-			// Get a PR body for the issue
-			prBody := fmt.Sprintf("This is an automatically generated draft PR for issue #%d.\n\n", issue.GetNumber())
-			prBody += fmt.Sprintf("## Issue\n[%s](%s)\n\n", issue.GetTitle(), issue.GetURL())
-			prBody += "## TODO\n- [ ] Implement solution\n- [ ] Add tests\n- [ ] Update documentation\n"
-
 			// Create the draft PR
 			logging.Info("Creating draft PR",
+				"owner", issue.GetOwner(),
+				"repo", issue.GetRepo(),
 				"title", prTitle,
 				"branch", branchName,
 				"base", defaultBranch)
 
-			pr, err := githubAdapter.CreateDraftPullRequest(
-				issue.GetOwner(),
-				issue.GetRepo(),
-				prTitle,
-				prBody,
-				branchName,
-				defaultBranch,
-			)
+				// Use the workflow's CreatePullRequestForIssue method to get Anthropic-generated PR body
+				pr, err := implementationWorkflow.CreatePullRequestForIssue(
+					issue.GetOwner(),
+					issue.GetRepo(),
+					branchName,
+					defaultBranch,
+					issue.GetNumber(),
+				)
 			if err != nil {
 				return fmt.Errorf("failed to create draft PR: %w", err)
 			}
