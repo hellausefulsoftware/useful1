@@ -18,21 +18,21 @@ type IssueProcessor interface {
 
 // Monitor provides a generic VCS monitor for any platform
 type Monitor struct {
-	service       Service
-	config        *config.Config
-	lastChecked   time.Time
-	username      string
-	processedIDs  map[string]time.Time
-	mutex         sync.Mutex
-	processor     IssueProcessor
-	repoFilter    []string
+	service      Service
+	config       *config.Config
+	lastChecked  time.Time
+	username     string
+	processedIDs map[string]time.Time
+	mutex        sync.Mutex
+	processor    IssueProcessor
+	repoFilter   []string
 }
 
 // MonitorConfig holds configuration for creating a monitor
 type MonitorConfig struct {
-	Config      *config.Config
-	Service     Service
-	Processor   IssueProcessor
+	Config    *config.Config
+	Service   Service
+	Processor IssueProcessor
 }
 
 // NewMonitor creates a new VCS monitor with the given configuration
@@ -40,7 +40,7 @@ func NewMonitor(cfg MonitorConfig) (*Monitor, error) {
 	if cfg.Config == nil {
 		return nil, fmt.Errorf("config is required for monitor")
 	}
-	
+
 	if cfg.Service == nil {
 		return nil, fmt.Errorf("service is required for monitor")
 	}
@@ -52,7 +52,7 @@ func NewMonitor(cfg MonitorConfig) (*Monitor, error) {
 	}
 
 	repoFilter := cfg.Config.Monitor.RepoFilter
-	logging.Info("Creating new monitor", 
+	logging.Info("Creating new monitor",
 		"username", username,
 		"repo_filter_count", len(repoFilter))
 

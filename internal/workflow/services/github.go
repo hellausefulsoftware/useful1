@@ -34,7 +34,8 @@ func NewGitHubImplementationService(cfg *config.Config) *GitHubImplementationSer
 }
 
 // CreateImplementationPromptAndExecute creates an implementation plan and executes it using CLI
-func (s *GitHubImplementationService) CreateImplementationPromptAndExecute(owner, repo, branchName string, issueNumber int) error {
+// Returns the Claude CLI output so it can be used in PR descriptions
+func (s *GitHubImplementationService) CreateImplementationPromptAndExecute(owner, repo, branchName string, issueNumber int) (string, error) {
 	// Create a partial issue object to get started
 	issue := &models.Issue{
 		Owner:  owner,
@@ -47,7 +48,7 @@ func (s *GitHubImplementationService) CreateImplementationPromptAndExecute(owner
 	// Clone or update the repository and get the directory
 	repoDir, err := s.cloneRepository(owner, repo, branchName, issueNumber)
 	if err != nil {
-		return fmt.Errorf("failed to prepare repository: %w", err)
+		return "", fmt.Errorf("failed to prepare repository: %w", err)
 	}
 
 	logging.Info("Creating implementation plan for issue",
@@ -59,7 +60,7 @@ func (s *GitHubImplementationService) CreateImplementationPromptAndExecute(owner
 
 	// Create GitHub client
 	githubClient := createGitHubClient(s.config)
-	
+
 	// Get the full issue details to generate an implementation plan
 	fullIssue, err := s.getIssueDetails(githubClient, issue.Owner, issue.Repo, issue.Number)
 	if err != nil {
@@ -113,14 +114,18 @@ func (s *GitHubImplementationService) CreateImplementationPromptAndExecute(owner
 	}
 
 	// Change to repo directory to run git commands
-	currentDir, err := os.Getwd()
-	if err != nil {
-		return fmt.Errorf("failed to get current directory: %w", err)
+	currentDir, dirErr := os.Getwd()
+	if dirErr != nil {
+		return "", fmt.Errorf("failed to get current directory: %w", dirErr)
 	}
-	defer os.Chdir(currentDir) // Return to original directory when done
+	defer func() {
+		if chDirErr := os.Chdir(currentDir); chDirErr != nil {
+			logging.Warn("Failed to return to original directory", "error", chDirErr)
+		}
+	}() // Return to original directory when done
 
-	if err := os.Chdir(repoDir); err != nil {
-		return fmt.Errorf("failed to change to repository directory: %w", err)
+	if chDirErr := os.Chdir(repoDir); chDirErr != nil {
+		return "", fmt.Errorf("failed to change to repository directory: %w", chDirErr)
 	}
 
 	// Generate a description for the implementation (unused in this flow but kept for logging)
@@ -135,7 +140,7 @@ func (s *GitHubImplementationService) CreateImplementationPromptAndExecute(owner
 	// Create a temporary file in the current directory to store the issue details
 	issueDetailFile, err := os.CreateTemp("", "issue-*.txt")
 	if err != nil {
-		return fmt.Errorf("failed to create temporary issue detail file: %w", err)
+		return "", fmt.Errorf("failed to create temporary issue detail file: %w", err)
 	}
 	defer func() {
 		if removeErr := os.Remove(issueDetailFile.Name()); removeErr != nil {
@@ -146,10 +151,10 @@ func (s *GitHubImplementationService) CreateImplementationPromptAndExecute(owner
 	// Write issue details to the file
 	issueContent := fmt.Sprintf("Issue #%d: %s\n\n%s", issue.Number, issue.Title, issue.Body)
 	if _, writeErr := issueDetailFile.WriteString(issueContent); writeErr != nil {
-		return fmt.Errorf("failed to write to issue detail file: %w", writeErr)
+		return "", fmt.Errorf("failed to write to issue detail file: %w", writeErr)
 	}
 	if closeErr := issueDetailFile.Close(); closeErr != nil {
-		return fmt.Errorf("failed to close issue detail file: %w", closeErr)
+		return "", fmt.Errorf("failed to close issue detail file: %w", closeErr)
 	}
 
 	// Create metadata for the CLI tool
@@ -165,7 +170,7 @@ func (s *GitHubImplementationService) CreateImplementationPromptAndExecute(owner
 	// Create a temporary metadata file
 	metadataFile, err := os.CreateTemp("", "metadata-*.json")
 	if err != nil {
-		return fmt.Errorf("failed to create metadata file: %w", err)
+		return "", fmt.Errorf("failed to create metadata file: %w", err)
 	}
 	defer func() {
 		if removeErr := os.Remove(metadataFile.Name()); removeErr != nil {
@@ -176,14 +181,14 @@ func (s *GitHubImplementationService) CreateImplementationPromptAndExecute(owner
 	// Write metadata to the file
 	metadataBytes, err := json.Marshal(metadata)
 	if err != nil {
-		return fmt.Errorf("failed to marshal metadata: %w", err)
+		return "", fmt.Errorf("failed to marshal metadata: %w", err)
 	}
 
 	if _, writeErr := metadataFile.Write(metadataBytes); writeErr != nil {
-		return fmt.Errorf("failed to write metadata: %w", writeErr)
+		return "", fmt.Errorf("failed to write metadata: %w", writeErr)
 	}
 	if closeErr := metadataFile.Close(); closeErr != nil {
-		return fmt.Errorf("failed to close metadata file: %w", closeErr)
+		return "", fmt.Errorf("failed to close metadata file: %w", closeErr)
 	}
 
 	logging.Info("Executing Claude CLI with implementation plan as prompt",
@@ -191,18 +196,18 @@ func (s *GitHubImplementationService) CreateImplementationPromptAndExecute(owner
 
 	// Create executor to handle CLI command execution
 	executor := cli.NewExecutor(s.config)
-	
+
 	// Set up the arguments - only pass -p for the prompt
 	// The executor will handle adding the command and any config-based args
 	args := []string{"-p", implementationContent}
-	
+
 	// Execute the CLI tool using the executor
 	output, err := executor.ExecuteWithOutput(args)
 	if err != nil {
 		logging.Error("Failed to execute Claude CLI with implementation plan",
 			"error", err,
 			"output", output)
-		return fmt.Errorf("failed to execute Claude CLI: %w", err)
+		return "", fmt.Errorf("failed to execute Claude CLI: %w", err)
 	}
 
 	// Log the Claude CLI output for debugging
@@ -210,19 +215,19 @@ func (s *GitHubImplementationService) CreateImplementationPromptAndExecute(owner
 		"output_length", len(output),
 		"claude_output", output)
 	logging.Debug("Claude CLI full output", "output", output)
-	
+
 	// Check if the git repo has any changes
 	statusCmd := exec.Command("git", "status", "--porcelain")
 	statusOut, err := statusCmd.CombinedOutput()
 	if err != nil {
 		logging.Error("Failed to check git status", "error", err)
-		return fmt.Errorf("failed to check git status: %w", err)
+		return "", fmt.Errorf("failed to check git status: %w", err)
 	}
-	
+
 	// If there are changes, commit them
 	if len(statusOut) > 0 {
 		logging.Info("Repository has changes, preparing to commit")
-		
+
 		// List the changed files for the commit message
 		changedFiles := []string{}
 		for _, line := range strings.Split(string(statusOut), "\n") {
@@ -230,68 +235,68 @@ func (s *GitHubImplementationService) CreateImplementationPromptAndExecute(owner
 				changedFiles = append(changedFiles, strings.TrimSpace(line[2:]))
 			}
 		}
-		
+
 		// Create the Anthropic analyzer for commit message generation
 		analyzer := anthropic.NewAnalyzer(s.config)
-		
+
 		// Generate a commit message
 		commitMsg, err := analyzer.GenerateCommitMessage(
 			&models.Issue{
 				Number: issueNumber,
-				Title: issue.Title,
-				Body: issue.Body,
+				Title:  issue.Title,
+				Body:   issue.Body,
 			},
 			changedFiles,
 			"Created files to implement solution")
-			
+
 		if err != nil {
 			// Fallback commit message if generation fails
 			commitMsg = fmt.Sprintf("feat: implement solution for issue #%d", issueNumber)
-			logging.Warn("Failed to generate commit message, using fallback", 
+			logging.Warn("Failed to generate commit message, using fallback",
 				"error", err,
 				"fallback", commitMsg)
 		}
-		
+
 		// Add all changes
 		addCmd := exec.Command("git", "add", ".")
 		addOut, err := addCmd.CombinedOutput()
 		if err != nil {
-			return fmt.Errorf("failed to git add: %w\nOutput: %s", err, string(addOut))
+			return "", fmt.Errorf("failed to git add: %w\nOutput: %s", err, string(addOut))
 		}
-		
+
 		// Commit the changes
 		commitCmd := exec.Command("git", "commit", "-m", commitMsg)
 		commitOut, err := commitCmd.CombinedOutput()
 		if err != nil {
-			return fmt.Errorf("failed to commit: %w\nOutput: %s", err, string(commitOut))
+			return "", fmt.Errorf("failed to commit: %w\nOutput: %s", err, string(commitOut))
 		}
 		logging.Info("Successfully committed changes", "message", commitMsg)
-		
+
 		// Push to the branch
 		pushCmd := exec.Command("git", "push", "origin", branchName)
 		pushOut, err := pushCmd.CombinedOutput()
 		if err != nil {
-			return fmt.Errorf("failed to push: %w\nOutput: %s", err, string(pushOut))
+			return "", fmt.Errorf("failed to push: %w\nOutput: %s", err, string(pushOut))
 		}
 		logging.Info("Successfully pushed changes to remote")
 	} else {
 		logging.Info("No changes detected in repository after Claude CLI execution")
-		
+
 		// Check for unpushed commits before proceeding
 		unpushedCmd := exec.Command("git", "rev-list", "@{u}..", "--count")
 		unpushedOut, unpushedErr := unpushedCmd.CombinedOutput()
-		
+
 		if unpushedErr == nil {
 			unpushedCount := strings.TrimSpace(string(unpushedOut))
 			if unpushedCount != "0" {
 				logging.Info("Found unpushed commits, pushing to remote", "count", unpushedCount)
-				
+
 				// Push commits to the remote branch
 				pushCmd := exec.Command("git", "push", "origin", branchName)
 				pushOut, pushErr := pushCmd.CombinedOutput()
 				if pushErr != nil {
-					logging.Warn("Failed to push commits", 
-						"error", pushErr, 
+					logging.Warn("Failed to push commits",
+						"error", pushErr,
 						"output", string(pushOut))
 				} else {
 					logging.Info("Successfully pushed commits to remote branch")
@@ -305,8 +310,8 @@ func (s *GitHubImplementationService) CreateImplementationPromptAndExecute(owner
 				"output", string(unpushedOut))
 		}
 	}
-	
-	return nil
+
+	return output, nil
 }
 
 // GenerateBranchAndTitle generates a branch name and PR title
@@ -344,7 +349,7 @@ func (s *GitHubImplementationService) GenerateBranchAndTitle(owner, repo, title,
 	analyzer := anthropic.NewAnalyzer(s.config)
 	branchName, err := analyzer.AnalyzeIssue(issueModel)
 	if err != nil {
-		logging.Warn("Failed to generate branch name with Anthropic API, falling back to simple generation", 
+		logging.Warn("Failed to generate branch name with Anthropic API, falling back to simple generation",
 			"error", err)
 		// Fall back to the default branch name
 		branchName = fmt.Sprintf("feature/%s", sanitizeBranchName(title))
@@ -469,9 +474,9 @@ func (s *GitHubImplementationService) cloneRepository(owner, repo, branch string
 	if repoExists {
 		// Check if the existing directory is a valid git repository
 		// If not, remove it and clone fresh
-		isValid, err := s.validateGitRepository(tempDir)
-		if err != nil {
-			return "", err
+		isValid, validateErr := s.validateGitRepository(tempDir)
+		if validateErr != nil {
+			return "", validateErr
 		}
 
 		if !isValid {
@@ -479,16 +484,16 @@ func (s *GitHubImplementationService) cloneRepository(owner, repo, branch string
 			repoExists = false
 		} else {
 			// It's a valid repository, update it
-			err = s.updateExistingRepository(tempDir, branch)
-			if err != nil {
-				return "", err
+			_, updateErr := s.updateExistingRepository(tempDir, branch)
+			if updateErr != nil {
+				return "", updateErr
 			}
 		}
 	}
 
 	// Handle non-existing or invalid repositories that need to be cloned
 	if !repoExists {
-		err = s.cloneFreshRepository(repoURL, tempDir, branch)
+		_, err = s.cloneFreshRepository(repoURL, tempDir, branch)
 		if err != nil {
 			return "", err
 		}
@@ -504,10 +509,14 @@ func (s *GitHubImplementationService) validateGitRepository(repoDir string) (boo
 	if err != nil {
 		return false, fmt.Errorf("failed to get current directory: %w", err)
 	}
-	defer os.Chdir(currentDir) // Return to original directory when done
+	defer func() {
+		if chDirErr := os.Chdir(currentDir); chDirErr != nil {
+			logging.Warn("Failed to return to original directory", "error", chDirErr)
+		}
+	}() // Return to original directory when done
 
-	if err := os.Chdir(repoDir); err != nil {
-		return false, fmt.Errorf("failed to change to repository directory: %w", err)
+	if chDirErr := os.Chdir(repoDir); chDirErr != nil {
+		return false, fmt.Errorf("failed to change to repository directory: %w", chDirErr)
 	}
 
 	// Check if this is a valid git repository
@@ -520,7 +529,9 @@ func (s *GitHubImplementationService) validateGitRepository(repoDir string) (boo
 			"dir", repoDir)
 
 		// Go back to original directory before removing
-		os.Chdir(currentDir)
+		if chDirErr := os.Chdir(currentDir); chDirErr != nil {
+			logging.Warn("Failed to return to original directory", "error", chDirErr)
+		}
 
 		// Remove the invalid repository directory
 		if err := os.RemoveAll(repoDir); err != nil {
@@ -534,15 +545,19 @@ func (s *GitHubImplementationService) validateGitRepository(repoDir string) (boo
 }
 
 // updateExistingRepository updates an existing git repository
-func (s *GitHubImplementationService) updateExistingRepository(repoDir, branch string) error {
+func (s *GitHubImplementationService) updateExistingRepository(repoDir, branch string) (string, error) {
 	currentDir, err := os.Getwd()
 	if err != nil {
-		return fmt.Errorf("failed to get current directory: %w", err)
+		return "", fmt.Errorf("failed to get current directory: %w", err)
 	}
-	defer os.Chdir(currentDir) // Return to original directory when done
+	defer func() {
+		if chDirErr := os.Chdir(currentDir); chDirErr != nil {
+			logging.Warn("Failed to return to original directory", "error", chDirErr)
+		}
+	}() // Return to original directory when done
 
-	if err := os.Chdir(repoDir); err != nil {
-		return fmt.Errorf("failed to change to repository directory: %w", err)
+	if chDirErr := os.Chdir(repoDir); chDirErr != nil {
+		return "", fmt.Errorf("failed to change to repository directory: %w", chDirErr)
 	}
 
 	logging.Info("Repository directory exists and is valid, attempting to update", "dir", repoDir)
@@ -552,7 +567,7 @@ func (s *GitHubImplementationService) updateExistingRepository(repoDir, branch s
 	fetchCmd := exec.Command("git", "fetch", "origin")
 	fetchOut, err := fetchCmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("failed to fetch latest changes: %w\nOutput: %s", err, string(fetchOut))
+		return "", fmt.Errorf("failed to fetch latest changes: %w\nOutput: %s", err, string(fetchOut))
 	}
 
 	// Try to checkout the branch (it may already be checked out)
@@ -571,7 +586,7 @@ func (s *GitHubImplementationService) updateExistingRepository(repoDir, branch s
 			createBranchCmd := exec.Command("git", "checkout", "-b", branch)
 			createOut, createErr := createBranchCmd.CombinedOutput()
 			if createErr != nil {
-				return fmt.Errorf("failed to create branch locally: %w\nOutput: %s", createErr, string(createOut))
+				return "", fmt.Errorf("failed to create branch locally: %w\nOutput: %s", createErr, string(createOut))
 			}
 		}
 	} else {
@@ -590,7 +605,7 @@ func (s *GitHubImplementationService) updateExistingRepository(repoDir, branch s
 		logging.Info("Pulled latest changes from remote", "branch", branch)
 	}
 
-	return nil
+	return "", nil
 }
 
 // getIssueDetails retrieves full details of an issue including comments
@@ -668,22 +683,23 @@ func (s *GitHubImplementationService) getIssueDetails(client *github.Client, own
 }
 
 // CreatePullRequestForIssue creates a PR specifically linked to an issue
-func (s *GitHubImplementationService) CreatePullRequestForIssue(owner, repo, branch, base string, issueNumber int) (*github.PullRequest, error) {
+// claudeOutput parameter contains the implementation output from Claude CLI
+func (s *GitHubImplementationService) CreatePullRequestForIssue(owner, repo, branch, base string, issueNumber int, claudeOutput string) (*github.PullRequest, error) {
 	// Get issue details first
 	githubClient := createGitHubClient(s.config)
 	issue, _, err := githubClient.Issues.Get(context.Background(), owner, repo, issueNumber)
 	if err != nil {
-		logging.Error("Failed to get issue details", 
+		logging.Error("Failed to get issue details",
 			"error", err,
 			"owner", owner,
 			"repo", repo,
 			"issue", issueNumber)
 		return nil, fmt.Errorf("failed to get issue details: %w", err)
 	}
-	
+
 	// Use issue title as PR title
 	title := fmt.Sprintf("Fix #%d: %s", issueNumber, *issue.Title)
-	
+
 	// Create an issue model for anthropic
 	issueModel := &models.Issue{
 		Owner:  owner,
@@ -692,34 +708,96 @@ func (s *GitHubImplementationService) CreatePullRequestForIssue(owner, repo, bra
 		Title:  *issue.Title,
 		Body:   *issue.Body,
 	}
-	
+
 	// Generate PR description using Anthropic API
 	var body string
 	if s.config.Anthropic.Token != "" {
 		// Create Anthropic analyzer
 		analyzer := anthropic.NewAnalyzer(s.config)
-		logging.Info("Created Anthropic analyzer for PR description", 
+		logging.Info("Created Anthropic analyzer for PR description",
 			"token_available", s.config.Anthropic.Token != "",
 			"token_length", len(s.config.Anthropic.Token))
-		
-		// Generate AI-powered PR description with issue context
-		aiGeneratedPR, err := analyzer.GeneratePRDescription(issueModel, "", []string{})
+
+		// Get changed files for context by diffing against default branch
+		changedFiles := []string{}
+
+		// Get the default branch name
+		defaultBranch := base // Use base as fallback
+
+		// Try to determine the default branch if needed
+		if defaultBranch == "" {
+			// Run git command to get the default branch
+			defaultBranchCmd := exec.Command("git", "symbolic-ref", "refs/remotes/origin/HEAD", "--short")
+			defaultBranchOutput, err := defaultBranchCmd.CombinedOutput()
+			if err == nil {
+				// Format is usually "origin/main" or "origin/master"
+				fullBranch := strings.TrimSpace(string(defaultBranchOutput))
+				parts := strings.Split(fullBranch, "/")
+				if len(parts) > 1 {
+					defaultBranch = parts[1]
+					logging.Info("Detected default branch", "branch", defaultBranch)
+				}
+			} else {
+				logging.Warn("Failed to detect default branch, using base branch instead",
+					"error", err,
+					"base", base)
+			}
+		}
+
+		// Use double-dot syntax: defaultBranch..HEAD shows what will be merged into the default branch
+		// Run diff command against default branch to get changed files
+		diffCmd := exec.Command("git", "diff", "--name-only", fmt.Sprintf("%s..HEAD", defaultBranch))
+		diffOutput, err := diffCmd.CombinedOutput()
+		if err == nil {
+			// Split the output into lines to get individual files
+			for _, line := range strings.Split(string(diffOutput), "\n") {
+				if line = strings.TrimSpace(line); line != "" {
+					changedFiles = append(changedFiles, line)
+				}
+			}
+			logging.Info("Retrieved changed files from diff with default branch",
+				"file_count", len(changedFiles),
+				"default_branch", defaultBranch)
+		} else {
+			logging.Warn("Failed to get changed files from diff with default branch",
+				"error", err,
+				"default_branch", defaultBranch,
+				"output", string(diffOutput))
+
+			// Fallback: try listing files that differ from origin/defaultBranch if available
+			fallbackDiffCmd := exec.Command("git", "diff", "--name-only", fmt.Sprintf("origin/%s..HEAD", defaultBranch))
+			fallbackOutput, fallbackErr := fallbackDiffCmd.CombinedOutput()
+			if fallbackErr == nil {
+				// Process the fallback results
+				for _, line := range strings.Split(string(fallbackOutput), "\n") {
+					if line = strings.TrimSpace(line); line != "" {
+						changedFiles = append(changedFiles, line)
+					}
+				}
+				logging.Info("Retrieved changed files using fallback diff with origin/default branch",
+					"file_count", len(changedFiles),
+					"default_branch", defaultBranch)
+			}
+		}
+
+		// Generate AI-powered PR description with issue context and Claude output
+		aiGeneratedPR, err := analyzer.GeneratePRDescription(issueModel, claudeOutput, changedFiles)
 		if err != nil {
 			logging.Warn("Failed to generate PR description with Anthropic API, using simple description",
 				"error", err)
 			body = fmt.Sprintf("Fixes #%d", issueNumber)
 		} else {
 			body = aiGeneratedPR
-			logging.Info("Successfully generated PR description with Anthropic API", 
+			logging.Info("Successfully generated PR description with Anthropic API",
 				"description_length", len(body))
 		}
 	} else {
 		body = fmt.Sprintf("Fixes #%d", issueNumber)
 	}
-	
+
 	// Add footer
-	body += fmt.Sprintf("\n\nCloses #%d\n\n**This PR was generated using https://github.com/hellausefulsoftware/useful1**", issueNumber)
-	
+	body += fmt.Sprintf("\n\nCloses #%d\n\n**This PR was generated using [useful1](https://github.com/hellausefulsoftware/useful1)**", issueNumber)
+
 	// Call the regular PR creation with the issue-specific information
 	return s.createPullRequestInternal(owner, repo, branch, base, title, body, issueNumber)
 }
@@ -727,7 +805,7 @@ func (s *GitHubImplementationService) CreatePullRequestForIssue(owner, repo, bra
 // createPullRequestInternal is a shared implementation for creating PRs
 func (s *GitHubImplementationService) createPullRequestInternal(owner, repo, branch, base, title, body string, issueNum int) (*github.PullRequest, error) {
 	logging.Info("Creating pull request",
-		"owner", owner, 
+		"owner", owner,
 		"repo", repo,
 		"branch", branch,
 		"base", base,
@@ -743,7 +821,7 @@ func (s *GitHubImplementationService) createPullRequestInternal(owner, repo, bra
 		Body:  github.String(body),
 		Head:  github.String(branch),
 		Base:  github.String(base),
-		Draft: github.Bool(true), // Create as draft by default
+		Draft: github.Bool(false), // Create as ready for review by default
 	}
 
 	logging.Info("Making GitHub API call to create PR",
@@ -789,25 +867,25 @@ func (s *GitHubImplementationService) createPullRequestInternal(owner, repo, bra
 	logging.Info("Successfully created PR",
 		"pr_number", *pr.Number,
 		"pr_url", *pr.HTMLURL)
-		
+
 	// If we have an issue number, post a comment to the issue
 	if issueNum > 0 {
 		// Format PR notification comment
-		commentMsg := fmt.Sprintf("🚀 A pull request has been created to address this issue: [#%d](%s)\n\nThis PR was created using AI assistance through useful1.", 
-			*pr.Number, 
+		commentMsg := fmt.Sprintf("🚀 A pull request has been created to address this issue: [#%d](%s)\n\nThis PR was created using AI assistance through [useful1](https://github.com/hellausefulsoftware/useful1).",
+			*pr.Number,
 			*pr.HTMLURL)
-			
+
 		// Post comment to the issue
-		err := s.RespondToIssue(owner, repo, issueNum, commentMsg)
+		_, err := s.RespondToIssue(owner, repo, issueNum, commentMsg)
 		if err != nil {
-			logging.Warn("Failed to post PR notification comment to issue", 
+			logging.Warn("Failed to post PR notification comment to issue",
 				"error", err,
 				"issue", issueNum,
 				"pr", *pr.Number)
 			// We don't want to fail the PR creation just because the comment failed
 			// so we just log a warning here
 		} else {
-			logging.Info("Posted PR notification comment to issue", 
+			logging.Info("Posted PR notification comment to issue",
 				"issue", issueNum,
 				"pr", *pr.Number)
 		}
@@ -819,7 +897,7 @@ func (s *GitHubImplementationService) createPullRequestInternal(owner, repo, bra
 // CreatePullRequest creates a new pull request with AI-generated description
 func (s *GitHubImplementationService) CreatePullRequest(owner, repo, branch, base, title string) (*github.PullRequest, error) {
 	logging.Info("Creating pull request",
-		"owner", owner, 
+		"owner", owner,
 		"repo", repo,
 		"branch", branch,
 		"base", base,
@@ -849,7 +927,7 @@ func (s *GitHubImplementationService) CreatePullRequest(owner, repo, branch, bas
 
 	// Generate PR description using Anthropic API
 	var body string
-	
+
 	if s.config.Anthropic.Token != "" {
 		// Create Anthropic analyzer with proper config
 		analyzer := anthropic.NewAnalyzer(s.config)
@@ -857,14 +935,73 @@ func (s *GitHubImplementationService) CreatePullRequest(owner, repo, branch, bas
 			"token_available", s.config.Anthropic.Token != "",
 			"token_length", len(s.config.Anthropic.Token))
 
-		// Get changed files for context (if available)
+		// Get changed files for context by diffing against default branch
 		changedFiles := []string{}
-		
+
+		// Get the default branch name
+		defaultBranch := base // Use base as fallback
+
+		// Try to determine the default branch if needed
+		if defaultBranch == "" {
+			// Run git command to get the default branch
+			defaultBranchCmd := exec.Command("git", "symbolic-ref", "refs/remotes/origin/HEAD", "--short")
+			defaultBranchOutput, err := defaultBranchCmd.CombinedOutput()
+			if err == nil {
+				// Format is usually "origin/main" or "origin/master"
+				fullBranch := strings.TrimSpace(string(defaultBranchOutput))
+				parts := strings.Split(fullBranch, "/")
+				if len(parts) > 1 {
+					defaultBranch = parts[1]
+					logging.Info("Detected default branch", "branch", defaultBranch)
+				}
+			} else {
+				logging.Warn("Failed to detect default branch, using base branch instead",
+					"error", err,
+					"base", base)
+			}
+		}
+		// Use double-dot syntax: defaultBranch..HEAD shows what will be merged into the default branch
+
+		// Run diff command against default branch to get changed files
+		diffCmd := exec.Command("git", "diff", "--name-only", fmt.Sprintf("%s..HEAD", defaultBranch))
+		diffOutput, err := diffCmd.CombinedOutput()
+		if err == nil {
+			// Split the output into lines to get individual files
+			for _, line := range strings.Split(string(diffOutput), "\n") {
+				if line = strings.TrimSpace(line); line != "" {
+					changedFiles = append(changedFiles, line)
+				}
+			}
+			logging.Info("Retrieved changed files from diff with default branch",
+				"file_count", len(changedFiles),
+				"default_branch", defaultBranch)
+		} else {
+			logging.Warn("Failed to get changed files from diff with default branch",
+				"error", err,
+				"default_branch", defaultBranch,
+				"output", string(diffOutput))
+
+			// Fallback: try listing files that differ from origin/defaultBranch if available
+			fallbackDiffCmd := exec.Command("git", "diff", "--name-only", fmt.Sprintf("origin/%s..HEAD", defaultBranch))
+			fallbackOutput, fallbackErr := fallbackDiffCmd.CombinedOutput()
+			if fallbackErr == nil {
+				// Process the fallback results
+				for _, line := range strings.Split(string(fallbackOutput), "\n") {
+					if line = strings.TrimSpace(line); line != "" {
+						changedFiles = append(changedFiles, line)
+					}
+				}
+				logging.Info("Retrieved changed files using fallback diff with origin/default branch",
+					"file_count", len(changedFiles),
+					"default_branch", defaultBranch)
+			}
+		}
+
 		// If issue number available, try to get full issue details
 		if issueNum > 0 {
 			githubClient := createGitHubClient(s.config)
-			fullIssue, err := s.getIssueDetails(githubClient, owner, repo, issueNum)
-			if err == nil {
+			fullIssue, issueErr := s.getIssueDetails(githubClient, owner, repo, issueNum)
+			if issueErr == nil {
 				issue = fullIssue
 			}
 		}
@@ -885,23 +1022,23 @@ func (s *GitHubImplementationService) CreatePullRequest(owner, repo, branch, bas
 	}
 
 	// Add footer
-	body += "\n\n**This PR was generated using https://github.com/hellausefulsoftware/useful1**"
+	body += "\n\n**This PR was generated using [useful1](https://github.com/hellausefulsoftware/useful1)**"
 
 	// Call the shared implementation
 	return s.createPullRequestInternal(owner, repo, branch, base, title, body, issueNum)
 }
 
 // RespondToIssue posts a comment to a GitHub issue
-func (s *GitHubImplementationService) RespondToIssue(owner, repo string, issueNumber int, comment string) error {
+func (s *GitHubImplementationService) RespondToIssue(owner, repo string, issueNumber int, comment string) (string, error) {
 	logging.Info("Responding to GitHub issue",
 		"owner", owner,
 		"repo", repo,
 		"issue", issueNumber,
 		"comment_length", len(comment))
-	
+
 	// Create GitHub client
 	githubClient := createGitHubClient(s.config)
-	
+
 	// Post the comment
 	resp, _, err := githubClient.Issues.CreateComment(
 		context.Background(),
@@ -912,45 +1049,49 @@ func (s *GitHubImplementationService) RespondToIssue(owner, repo string, issueNu
 			Body: github.String(comment),
 		},
 	)
-	
+
 	if err != nil {
-		logging.Error("Failed to post comment to issue", 
+		logging.Error("Failed to post comment to issue",
 			"error", err,
 			"owner", owner,
 			"repo", repo,
 			"issue", issueNumber)
-		return fmt.Errorf("failed to post comment to issue: %w", err)
+		return "", fmt.Errorf("failed to post comment to issue: %w", err)
 	}
-	
+
 	logging.Info("Successfully posted comment to issue",
 		"comment_id", resp.GetID(),
 		"owner", owner,
 		"repo", repo,
 		"issue", issueNumber)
-	
-	return nil
+
+	return "", nil
 }
 
 // cloneFreshRepository clones a fresh git repository
-func (s *GitHubImplementationService) cloneFreshRepository(repoURL, repoDir, branch string) error {
+func (s *GitHubImplementationService) cloneFreshRepository(repoURL, repoDir, branch string) (string, error) {
 	// Clone the repository - let git clone create the directory structure
 	logging.Info("Cloning repository", "url", repoURL, "dir", repoDir)
 
 	cloneCmd := exec.Command("git", "clone", repoURL, repoDir)
 	cloneOut, err := cloneCmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("failed to clone repository: %w\nOutput: %s", err, string(cloneOut))
+		return "", fmt.Errorf("failed to clone repository: %w\nOutput: %s", err, string(cloneOut))
 	}
 
 	// Change to repo directory
-	currentDir, err := os.Getwd()
-	if err != nil {
-		return fmt.Errorf("failed to get current directory: %w", err)
+	currentDir, dirErr := os.Getwd()
+	if dirErr != nil {
+		return "", fmt.Errorf("failed to get current directory: %w", dirErr)
 	}
-	defer os.Chdir(currentDir) // Return to original directory when done
+	defer func() {
+		if chDirErr := os.Chdir(currentDir); chDirErr != nil {
+			logging.Warn("Failed to return to original directory", "error", chDirErr)
+		}
+	}() // Return to original directory when done
 
-	if err := os.Chdir(repoDir); err != nil {
-		return fmt.Errorf("failed to change to repository directory: %w", err)
+	if chDirErr := os.Chdir(repoDir); chDirErr != nil {
+		return "", fmt.Errorf("failed to change to repository directory: %w", chDirErr)
 	}
 
 	// Checkout the branch
@@ -970,19 +1111,19 @@ func (s *GitHubImplementationService) cloneFreshRepository(repoURL, repoDir, bra
 			createCmd := exec.Command("git", "checkout", "-b", branch)
 			createOut, createErr := createCmd.CombinedOutput()
 			if createErr != nil {
-				return fmt.Errorf("failed to create branch: %w\nOutput: %s", createErr, string(createOut))
+				return "", fmt.Errorf("failed to create branch: %w\nOutput: %s", createErr, string(createOut))
 			}
 		} else {
 			// Try checkout again after fetch
 			retryCmd := exec.Command("git", "checkout", branch)
 			retryOut, retryErr := retryCmd.CombinedOutput()
 			if retryErr != nil {
-				return fmt.Errorf("failed to checkout branch after fetch: %w\nOutput: %s", retryErr, string(retryOut))
+				return "", fmt.Errorf("failed to checkout branch after fetch: %w\nOutput: %s", retryErr, string(retryOut))
 			}
 		}
 	} else {
 		logging.Info("Checked out branch", "branch", branch, "output", string(checkoutOut))
 	}
 
-	return nil
+	return "", nil
 }

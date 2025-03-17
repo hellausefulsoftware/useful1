@@ -24,11 +24,11 @@ func (p *Provider) GetService() Service {
 		platform = "github"
 		logging.Info("No VCS platform specified in config, defaulting to GitHub")
 	}
-	
+
 	// In actual implementation, we would have switch cases for different platforms
 	// For now, the GitHub implementation will be handled separately
 	logging.Info("Using VCS platform", "platform", platform)
-	
+
 	// The actual return will happen in the adapter implementation
 	return nil
 }

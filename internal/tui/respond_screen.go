@@ -200,7 +200,7 @@ func (r *RespondScreen) startExecution() tea.Cmd {
 	return func() tea.Msg {
 		// Get the input values
 		issueNumber := r.issueInput.Value()
-			_ = r.templateInput.Value() // templateName is unused now
+		_ = r.templateInput.Value() // templateName is unused now
 
 		// Check if executor is available
 		if r.executor == nil {

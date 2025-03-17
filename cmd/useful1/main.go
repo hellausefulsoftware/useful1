@@ -329,9 +329,9 @@ func runCLIExecutor(cmd *cobra.Command, screenType tui.ScreenType) {
 	// Process command based on screen type
 	var cmdErr error
 	switch screenType {
-		case tui.ScreenRespond:
-			// Issue response functionality has been moved to workflow package
-			cmdErr = fmt.Errorf("issue response functionality has been moved to the workflow package")
+	case tui.ScreenRespond:
+		// Issue response functionality has been moved to workflow package
+		cmdErr = fmt.Errorf("issue response functionality has been moved to the workflow package")
 	case tui.ScreenPR:
 		// Extract values needed for PR command
 		branch, err := flags.GetString("branch")
@@ -361,23 +361,23 @@ func runCLIExecutor(cmd *cobra.Command, screenType tui.ScreenType) {
 
 		// Create workflow instance and use it to create PR
 		w := workflow.NewImplementationWorkflow(cfg)
-		
+
 		// Get owner and repo from config
 		owner := cfg.GitHub.User
-			repo := "useful1" // Hard-coded for now - would come from selection
-		
+		repo := "useful1" // Hard-coded for now - would come from selection
+
 		if owner == "" {
 			cmdErr = fmt.Errorf("missing GitHub owner or repo in config")
 			break
 		}
-		
+
 		// Create the pull request
 		pr, err := w.CreatePullRequest(owner, repo, branch, base, title)
 		if err != nil {
 			cmdErr = fmt.Errorf("failed to create pull request: %w", err)
 			break
 		}
-		
+
 		// Output JSON response
 		response := map[string]interface{}{
 			"status":    "success",
@@ -388,13 +388,13 @@ func runCLIExecutor(cmd *cobra.Command, screenType tui.ScreenType) {
 			"pr_url":    *pr.HTMLURL,
 			"timestamp": time.Now().Format(time.RFC3339),
 		}
-		
+
 		jsonResponse, err := json.Marshal(response)
 		if err != nil {
 			cmdErr = fmt.Errorf("error formatting JSON response: %w", err)
 			break
 		}
-		
+
 		fmt.Println(string(jsonResponse))
 
 	case tui.ScreenTest:
@@ -494,10 +494,13 @@ func runCLIExecutor(cmd *cobra.Command, screenType tui.ScreenType) {
 		// Create a processor adapter that delegates to our main flow processing
 		// Create a function to handle processing discovered issues in the main execution flow
 		processIssueFunc := func(issue vcs.Issue) error {
-				// Get authenticated username
-				username, _ := githubAdapter.GetAuthenticatedUser()
+			// Get authenticated username
+			username, authErr := githubAdapter.GetAuthenticatedUser()
+			if authErr != nil {
+				logging.Warn("Failed to get authenticated user", "error", authErr)
+			}
 
-				logging.Info("Processing issue in main execution flow",
+			logging.Info("Processing issue in main execution flow",
 				"number", issue.GetNumber(),
 				"owner", issue.GetOwner(),
 				"repo", issue.GetRepo(),
@@ -517,9 +520,9 @@ func runCLIExecutor(cmd *cobra.Command, screenType tui.ScreenType) {
 			}
 
 			// Check if we already have a PR for this issue
-			prs, err := githubAdapter.GetPullRequestsForIssue(issue.GetOwner(), issue.GetRepo(), issue.GetNumber())
-			if err != nil {
-				logging.Warn("Failed to check for existing draft PRs", "error", err)
+			prs, prErr := githubAdapter.GetPullRequestsForIssue(issue.GetOwner(), issue.GetRepo(), issue.GetNumber())
+			if prErr != nil {
+				logging.Warn("Failed to check for existing draft PRs", "error", prErr)
 			} else {
 				// Check if any of these PRs are open drafts created by our user
 				for _, pr := range prs {
@@ -535,14 +538,14 @@ func runCLIExecutor(cmd *cobra.Command, screenType tui.ScreenType) {
 			implementationWorkflow := workflow.NewImplementationWorkflow(cfg)
 
 			// Generate branch name for the issue
-			branchName, prTitle, err := implementationWorkflow.GenerateBranchAndTitle(
+			branchName, prTitle, genErr := implementationWorkflow.GenerateBranchAndTitle(
 				issue.GetOwner(),
 				issue.GetRepo(),
 				issue.GetTitle(),
 				issue.GetBody(),
 			)
-			if err != nil {
-				return fmt.Errorf("failed to generate branch name: %w", err)
+			if genErr != nil {
+				return fmt.Errorf("failed to generate branch name: %w", genErr)
 			}
 
 			logging.Info("Generated branch name with workflow",
@@ -550,27 +553,28 @@ func runCLIExecutor(cmd *cobra.Command, screenType tui.ScreenType) {
 				"pr_title", prTitle)
 
 			// Get default branch
-			defaultBranch, err := githubAdapter.GetDefaultBranch(issue.GetOwner(), issue.GetRepo())
-			if err != nil {
-				logging.Warn("Failed to get default branch, using 'main'", "error", err)
+			defaultBranch, defaultErr := githubAdapter.GetDefaultBranch(issue.GetOwner(), issue.GetRepo())
+			if defaultErr != nil {
+				logging.Warn("Failed to get default branch, using 'main'", "error", defaultErr)
 				defaultBranch = "main" // Default fallback
 			}
 
 			// Create the branch
 			logging.Info("Creating branch", "branch", branchName, "base", defaultBranch)
-			if err := githubAdapter.CreateBranch(issue.GetOwner(), issue.GetRepo(), branchName, defaultBranch); err != nil {
-				return fmt.Errorf("failed to create branch: %w", err)
+			if createErr := githubAdapter.CreateBranch(issue.GetOwner(), issue.GetRepo(), branchName, defaultBranch); createErr != nil {
+				return fmt.Errorf("failed to create branch: %w", createErr)
 			}
 
-			// Create implementation plan
-			err = implementationWorkflow.CreateImplementationPlan(
+			// Create implementation plan and get Claude output
+			claudeOutput, planErr := implementationWorkflow.CreateImplementationPlan(
 				issue.GetOwner(),
 				issue.GetRepo(),
 				branchName,
 				issue.GetNumber(),
 			)
-			if err != nil {
-				logging.Warn("Failed to create implementation plan", "error", err)
+			if planErr != nil {
+				logging.Warn("Failed to create implementation plan", "error", planErr)
+				claudeOutput = "" // Empty if there was an error
 				// Continue anyway - we'll still create the PR
 			}
 
@@ -582,16 +586,17 @@ func runCLIExecutor(cmd *cobra.Command, screenType tui.ScreenType) {
 				"branch", branchName,
 				"base", defaultBranch)
 
-				// Use the workflow's CreatePullRequestForIssue method to get Anthropic-generated PR body
-				pr, err := implementationWorkflow.CreatePullRequestForIssue(
-					issue.GetOwner(),
-					issue.GetRepo(),
-					branchName,
-					defaultBranch,
-					issue.GetNumber(),
-				)
-			if err != nil {
-				return fmt.Errorf("failed to create draft PR: %w", err)
+			// Create the PR using the implementation output
+			pr, prErr := implementationWorkflow.CreatePullRequestForIssue(
+				issue.GetOwner(),
+				issue.GetRepo(),
+				branchName,
+				defaultBranch,
+				issue.GetNumber(),
+				claudeOutput,
+			)
+			if prErr != nil {
+				return fmt.Errorf("failed to create draft PR: %w", prErr)
 			}
 
 			logging.Info("Successfully created draft PR",

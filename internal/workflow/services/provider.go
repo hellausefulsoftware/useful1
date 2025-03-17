@@ -2,7 +2,7 @@ package services
 
 import (
 	"context"
-	
+
 	"github.com/google/go-github/v45/github"
 	"github.com/hellausefulsoftware/useful1/internal/cli"
 	"github.com/hellausefulsoftware/useful1/internal/config"

@@ -254,7 +254,9 @@ func (e *ExecuteScreen) executeCommand() tea.Cmd {
 		fmt.Println("Press Enter to return to TUI...")
 
 		// Wait for user to press Enter
-		fmt.Scanln()
+		if _, scanErr := fmt.Scanln(); scanErr != nil {
+			logging.Warn("Error waiting for user input", "error", scanErr)
+		}
 
 		// Return to alt screen
 		_ = tea.EnterAltScreen()

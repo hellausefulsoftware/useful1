@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"strconv"
 	"strings"
 	"time"
 
@@ -64,7 +63,6 @@ func (c *Client) RespondToIssue(owner, repo string, issueNumber int, comment str
 	logging.Debug("Successfully created issue comment", "comment_id", resp.GetID())
 	return nil
 }
-
 
 // GetPullRequestsForIssue gets all pull requests that reference an issue
 func (c *Client) GetPullRequestsForIssue(owner, repo string, issueNumber int) ([]*github.PullRequest, error) {
@@ -261,9 +259,9 @@ func (c *Client) CloneRepository(owner, repo, branch string, issueNumber int) (s
 	if repoExists {
 		// Check if the existing directory is a valid git repository
 		// If not, remove it and clone fresh
-		isValid, err := c.validateGitRepository(tempDir)
-		if err != nil {
-			return "", err
+		isValid, validateErr := c.validateGitRepository(tempDir)
+		if validateErr != nil {
+			return "", validateErr
 		}
 
 		if !isValid {
@@ -296,10 +294,14 @@ func (c *Client) validateGitRepository(repoDir string) (bool, error) {
 	if err != nil {
 		return false, fmt.Errorf("failed to get current directory: %w", err)
 	}
-	defer os.Chdir(currentDir) // Return to original directory when done
+	defer func() {
+		if chDirErr := os.Chdir(currentDir); chDirErr != nil {
+			fmt.Printf("WARNING: Failed to return to original directory: %v\n", chDirErr)
+		}
+	}() // Return to original directory when done
 
-	if err := os.Chdir(repoDir); err != nil {
-		return false, fmt.Errorf("failed to change to repository directory: %w", err)
+	if chDirErr := os.Chdir(repoDir); chDirErr != nil {
+		return false, fmt.Errorf("failed to change to repository directory: %w", chDirErr)
 	}
 
 	// Check if this is a valid git repository
@@ -312,7 +314,9 @@ func (c *Client) validateGitRepository(repoDir string) (bool, error) {
 			"dir", repoDir)
 
 		// Go back to original directory before removing
-		os.Chdir(currentDir)
+		if chDirErr := os.Chdir(currentDir); chDirErr != nil {
+			logging.Warn("Failed to return to original directory", "error", chDirErr)
+		}
 
 		// Remove the invalid repository directory
 		if err := os.RemoveAll(repoDir); err != nil {
@@ -331,10 +335,14 @@ func (c *Client) updateExistingRepository(repoDir, branch string) error {
 	if err != nil {
 		return fmt.Errorf("failed to get current directory: %w", err)
 	}
-	defer os.Chdir(currentDir) // Return to original directory when done
+	defer func() {
+		if chDirErr := os.Chdir(currentDir); chDirErr != nil {
+			fmt.Printf("WARNING: Failed to return to original directory: %v\n", chDirErr)
+		}
+	}() // Return to original directory when done
 
-	if err := os.Chdir(repoDir); err != nil {
-		return fmt.Errorf("failed to change to repository directory: %w", err)
+	if chDirErr := os.Chdir(repoDir); chDirErr != nil {
+		return fmt.Errorf("failed to change to repository directory: %w", chDirErr)
 	}
 
 	logging.Info("Repository directory exists and is valid, attempting to update", "dir", repoDir)
@@ -397,20 +405,24 @@ func (c *Client) cloneFreshRepository(repoURL, repoDir, branch string) error {
 	}
 
 	// Change to repo directory
-	currentDir, err := os.Getwd()
-	if err != nil {
-		return fmt.Errorf("failed to get current directory: %w", err)
+	currentDir, dirErr := os.Getwd()
+	if dirErr != nil {
+		return fmt.Errorf("failed to get current directory: %w", dirErr)
 	}
-	defer os.Chdir(currentDir) // Return to original directory when done
+	defer func() {
+		if chDirErr := os.Chdir(currentDir); chDirErr != nil {
+			fmt.Printf("WARNING: Failed to return to original directory: %v\n", chDirErr)
+		}
+	}() // Return to original directory when done
 
-	if err := os.Chdir(repoDir); err != nil {
-		return fmt.Errorf("failed to change to repository directory: %w", err)
+	if chDirErr := os.Chdir(repoDir); chDirErr != nil {
+		return fmt.Errorf("failed to change to repository directory: %w", chDirErr)
 	}
 
 	// Checkout the branch
 	checkoutCmd := exec.Command("git", "checkout", branch)
-	checkoutOut, err := checkoutCmd.CombinedOutput()
-	if err != nil {
+	checkoutOut, checkoutErr := checkoutCmd.CombinedOutput()
+	if checkoutErr != nil {
 		// Branch might not exist locally yet
 		fetchCmd := exec.Command("git", "fetch", "origin", branch+":"+branch)
 		fetchOut, fetchErr := fetchCmd.CombinedOutput()
@@ -597,14 +609,18 @@ func (c *Client) CreateImplementationFile(owner, repo, branchName string, issueN
 	}
 
 	// Change to repo directory to run git commands
-	currentDir, err := os.Getwd()
-	if err != nil {
-		return fmt.Errorf("failed to get current directory: %w", err)
+	currentDir, dirErr := os.Getwd()
+	if dirErr != nil {
+		return fmt.Errorf("failed to get current directory: %w", dirErr)
 	}
-	defer os.Chdir(currentDir) // Return to original directory when done
+	defer func() {
+		if chDirErr := os.Chdir(currentDir); chDirErr != nil {
+			fmt.Printf("WARNING: Failed to return to original directory: %v\n", chDirErr)
+		}
+	}() // Return to original directory when done
 
-	if err := os.Chdir(repoDir); err != nil {
-		return fmt.Errorf("failed to change to repository directory: %w", err)
+	if chDirErr := os.Chdir(repoDir); chDirErr != nil {
+		return fmt.Errorf("failed to change to repository directory: %w", chDirErr)
 	}
 
 	// Generate a description for the implementation (unused in this flow but kept for logging)
@@ -696,11 +712,11 @@ func (c *Client) CreateImplementationFile(owner, repo, branchName string, issueN
 
 	// Create executor to handle CLI command execution
 	executor := cli.NewExecutor(cfg)
-	
+
 	// Set up the arguments - only pass -p for the prompt
 	// The executor will handle adding the command and any config-based args
 	args = []string{"-p", implementationContent}
-	
+
 	// Execute the CLI tool using the executor
 	var output string
 	output, err = executor.ExecuteWithOutput(args)
@@ -807,172 +823,4 @@ func (c *Client) GetIssueComments(owner, repo string, issueNumber int) ([]*githu
 	}
 
 	return allComments, nil
-}
-
-// generateBranchAndTitle generates a branch name and PR title
-func (c *Client) generateBranchAndTitle(owner, repo, title, body string) (string, string, error) {
-	logging.Info("Generating branch name and title",
-		"owner", owner,
-		"repo", repo,
-		"title_length", len(title),
-		"body_length", len(body))
-
-	// 1. Extract issue number from title if present
-	issueNum := 0
-	if strings.Contains(title, "#") {
-		parts := strings.Split(title, "#")
-		if len(parts) > 1 {
-			numStr := strings.Split(parts[1], " ")[0]
-			num, err := strconv.Atoi(numStr)
-			if err == nil {
-				issueNum = num
-				logging.Info("Extracted issue number from title", "issue_number", issueNum)
-			}
-		}
-	}
-
-	// 2. Analyze title and body to determine issue type
-	// Look for clues in the text to classify as bug, feature, or chore
-	issueType := "feature" // Default to feature
-
-	lowerTitle := strings.ToLower(title)
-	lowerBody := strings.ToLower(body)
-
-	// Simple classification based on keywords
-	if strings.Contains(lowerTitle, "bug") ||
-		strings.Contains(lowerTitle, "fix") ||
-		strings.Contains(lowerTitle, "issue") ||
-		strings.Contains(lowerTitle, "problem") ||
-		strings.Contains(lowerBody, "bug") ||
-		strings.Contains(lowerBody, "fix") ||
-		strings.Contains(lowerBody, "doesn't work") ||
-		strings.Contains(lowerBody, "broken") {
-		issueType = "bugfix"
-	} else if strings.Contains(lowerTitle, "refactor") ||
-		strings.Contains(lowerTitle, "clean") ||
-		strings.Contains(lowerTitle, "doc") ||
-		strings.Contains(lowerBody, "refactor") ||
-		strings.Contains(lowerBody, "clean") ||
-		strings.Contains(lowerBody, "document") {
-		issueType = "chore"
-	}
-
-	logging.Info("Determined issue type", "type", issueType)
-
-	// 3. Extract meaningful keywords from title
-	words := strings.Fields(title)
-	var keywords []string
-
-	// Skip common words, articles, etc. to extract more meaningful terms
-	skipWords := map[string]bool{
-		"a": true, "an": true, "the": true, "and": true,
-		"is": true, "in": true, "to": true, "for": true,
-		"with": true, "of": true, "on": true, "draft": true,
-		"fix": true, "issue": true, "bug": true, "pr": true,
-		"pull": true, "request": true, "#": true,
-	}
-
-	// Get up to 3-5 meaningful words
-	for _, word := range words {
-		w := strings.ToLower(word)
-		if !skipWords[w] && len(keywords) < 5 {
-			// Remove special characters
-			w = sanitizeBranchName(w)
-			if w != "" && len(w) > 2 { // Skip very short words
-				keywords = append(keywords, w)
-			}
-		}
-	}
-
-	// If we couldn't extract good keywords, use a more generic approach
-	if len(keywords) < 2 {
-		simplifiedTitle := sanitizeBranchName(title)
-		keywords = strings.Split(simplifiedTitle, "-")
-		// Limit to 3-5 meaningful segments
-		if len(keywords) > 5 {
-			keywords = keywords[:5]
-		}
-	}
-
-	// 4. Create a descriptive branch name
-	var descriptivePart string
-	if len(keywords) > 0 {
-		descriptivePart = strings.Join(keywords, "-")
-	} else {
-		descriptivePart = "update"
-	}
-
-	// 5. Generate the final branch name with proper prefix
-	var branchName string
-	if issueNum > 0 {
-		// Format: type/issue-123-descriptive-name
-		branchName = fmt.Sprintf("%s/issue-%d-%s", issueType, issueNum, descriptivePart)
-	} else {
-		// If we couldn't extract an issue number, use a timestamp
-		timestamp := time.Now().Format("20060102")
-		branchName = fmt.Sprintf("%s/%s-%s", issueType, timestamp, descriptivePart)
-	}
-
-	// 6. Create an appropriate PR title
-	prTitle := title
-
-	// Add type prefix to title if not already present
-	if !strings.HasPrefix(strings.ToLower(title), "fix:") &&
-		!strings.HasPrefix(strings.ToLower(title), "feature:") &&
-		!strings.HasPrefix(strings.ToLower(title), "chore:") {
-		switch issueType {
-		case "bugfix":
-			prTitle = "Fix: " + title
-		case "feature":
-			prTitle = "Feature: " + title
-		case "chore":
-			prTitle = "Chore: " + title
-		}
-	}
-
-	logging.Info("Generated branch name with intelligent classification",
-		"branch", branchName,
-		"type", issueType,
-		"keywords", strings.Join(keywords, ", "))
-	logging.Info("Generated PR title", "title", prTitle)
-
-	return branchName, prTitle, nil
-}
-
-// sanitizeBranchName creates a valid git branch name from a string
-func sanitizeBranchName(input string) string {
-	// Sanitize the title for use in a branch name
-	sanitized := strings.ToLower(input)
-	sanitized = strings.ReplaceAll(sanitized, " ", "-")
-	sanitized = strings.ReplaceAll(sanitized, "/", "-")
-	sanitized = strings.ReplaceAll(sanitized, ":", "")
-	sanitized = strings.ReplaceAll(sanitized, ".", "")
-	sanitized = strings.ReplaceAll(sanitized, ",", "")
-	sanitized = strings.ReplaceAll(sanitized, "#", "")
-	sanitized = strings.ReplaceAll(sanitized, "?", "")
-	sanitized = strings.ReplaceAll(sanitized, "!", "")
-	sanitized = strings.ReplaceAll(sanitized, "(", "")
-	sanitized = strings.ReplaceAll(sanitized, ")", "")
-	sanitized = strings.ReplaceAll(sanitized, "[", "")
-	sanitized = strings.ReplaceAll(sanitized, "]", "")
-	sanitized = strings.ReplaceAll(sanitized, "\"", "")
-	sanitized = strings.ReplaceAll(sanitized, "'", "")
-	sanitized = strings.ReplaceAll(sanitized, "`", "")
-
-	// Remove consecutive dashes
-	for strings.Contains(sanitized, "--") {
-		sanitized = strings.ReplaceAll(sanitized, "--", "-")
-	}
-
-	// Trim dashes from the beginning and end
-	sanitized = strings.Trim(sanitized, "-")
-
-	// Limit branch name length
-	if len(sanitized) > 50 {
-		sanitized = sanitized[:50]
-		// Ensure we don't end with a dash
-		sanitized = strings.TrimRight(sanitized, "-")
-	}
-
-	return sanitized
 }

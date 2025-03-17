@@ -33,8 +33,8 @@ type MonitorScreen struct {
 	BaseScreen
 	spinner          spinner.Model
 	executor         *cli.Executor
-	vcsService       vcs.Service       // Platform-agnostic VCS service
-	monitor          *vcs.Monitor      // Platform-agnostic VCS monitor
+	vcsService       vcs.Service  // Platform-agnostic VCS service
+	monitor          *vcs.Monitor // Platform-agnostic VCS monitor
 	running          bool
 	runOnce          bool
 	pollTime         time.Time
@@ -60,7 +60,7 @@ type Issue struct {
 
 // tuiIssueProcessor implements the vcs.IssueProcessor interface for TUI
 type tuiIssueProcessor struct {
-	app       *App
+	app        *App
 	vcsService vcs.Service
 }
 
@@ -77,9 +77,9 @@ func (p *tuiIssueProcessor) Process(issue vcs.Issue) error {
 		// Just return if auto-processing is disabled
 		return nil
 	}
-	
+
 	// Use the implementation workflow to handle the complete process
-	return workflow.CreateAndImplementIssue(
+	_, err := workflow.CreateAndImplementIssue(
 		p.app.GetConfig(),
 		issue.GetOwner(),
 		issue.GetRepo(),
@@ -87,6 +87,7 @@ func (p *tuiIssueProcessor) Process(issue vcs.Issue) error {
 		issue.GetTitle(),
 		issue.GetBody(),
 	)
+	return err
 }
 
 // NewMonitorScreen creates a new monitor screen
@@ -95,7 +96,7 @@ func NewMonitorScreen(app *App) *MonitorScreen {
 	s.Spinner = spinner.Dot
 
 	var executor *cli.Executor
-	
+
 	// Create GitHub client directly
 	if app.GetConfig() != nil && app.GetConfig().GitHub.Token != "" {
 		// Initialize executor for CLI operations
@@ -105,25 +106,25 @@ func NewMonitorScreen(app *App) *MonitorScreen {
 	// Create VCS service
 	var vcsService vcs.Service
 	var monitor *vcs.Monitor
-	
+
 	if app.GetConfig() != nil {
-		// Create GitHub adapter 
+		// Create GitHub adapter
 		if adapter, err := github.NewAdapter(app.GetConfig()); err == nil {
 			vcsService = adapter
-			
+
 			// Create a custom processor for the TUI
 			processor := &tuiIssueProcessor{
-				app: app,
+				app:        app,
 				vcsService: adapter,
 			}
-			
+
 			// Create monitor config
 			monitorConfig := vcs.MonitorConfig{
 				Config:    app.GetConfig(),
 				Service:   adapter,
 				Processor: processor,
 			}
-			
+
 			// Create monitor
 			if m, err := vcs.NewMonitor(monitorConfig); err == nil {
 				monitor = m
@@ -194,7 +195,7 @@ func (m *MonitorScreen) fetchRepositories() tea.Msg {
 	for _, repo := range vcsRepos {
 		ownerName := repo.GetOwner()
 		repoName := repo.GetName()
-		
+
 		if repoName == "" || ownerName == "" {
 			continue
 		}

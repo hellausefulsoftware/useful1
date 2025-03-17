@@ -241,30 +241,30 @@ func (p *PRScreen) startExecution() tea.Cmd {
 				err:    fmt.Errorf("configuration not found"),
 			}
 		}
-		
+
 		// Get owner and repo from config
 		owner := config.GitHub.User
-			repo := "useful1" // Hard-coded for now - would come from config or selection
-		
+		repo := "useful1" // Hard-coded for now - would come from config or selection
+
 		if owner == "" {
 			return executionResultMsg{
 				output: "Error: Missing GitHub owner or repo in config",
 				err:    fmt.Errorf("missing GitHub owner or repo in config"),
 			}
 		}
-		
+
 		// Create workflow instance
 		w := workflow.NewImplementationWorkflow(config)
-		
+
 		// Create the pull request
 		pr, err := w.CreatePullRequest(owner, repo, branch, base, title)
-		
+
 		// Prepare result message
 		var result string
 		if err != nil {
 			result = "Error: " + err.Error()
 		} else {
-			result = fmt.Sprintf("Successfully created pull request #%d\nURL: %s", 
+			result = fmt.Sprintf("Successfully created pull request #%d\nURL: %s",
 				*pr.Number, *pr.HTMLURL)
 		}
 

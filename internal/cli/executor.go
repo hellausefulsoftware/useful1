@@ -2,14 +2,12 @@ package cli
 
 import (
 	"bufio"
-	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"strings"
 	"syscall"
-	"time"
 
 	"github.com/hellausefulsoftware/useful1/internal/config"
 	"github.com/hellausefulsoftware/useful1/internal/logging"
@@ -27,37 +25,12 @@ func NewExecutor(cfg *config.Config) *Executor {
 	}
 }
 
-// formatErrorResponse formats an error into a JSON response
-func (e *Executor) formatErrorResponse(err error, context map[string]interface{}) {
-	// Create error response
-	response := map[string]interface{}{
-		"status":    "error",
-		"message":   err.Error(),
-		"timestamp": time.Now().Format(time.RFC3339),
-	}
-
-	// Add any additional context
-	for k, v := range context {
-		response[k] = v
-	}
-
-	// Marshal and print
-	jsonResponse, jsonErr := json.Marshal(response)
-	if jsonErr == nil {
-		fmt.Println(string(jsonResponse))
-	} else {
-		// Fallback if JSON marshaling fails
-		logging.Error("JSON marshaling failed", "error", jsonErr)
-		fmt.Printf("{\"status\":\"error\",\"message\":\"%s\"}", err.Error())
-	}
-}
-
-// executeWithPrompts runs a command and handles interactive prompts
-func (e *Executor) executeWithPrompts(cmd string, args []string) (string, error) {
-	logging.Debug("executeWithPrompts called", "command", cmd, "args", args)
+// ExecuteWithPromptsInternal executes a command and captures its output, handling prompts
+func (e *Executor) ExecuteWithPromptsInternal(command string, args []string) (string, error) {
+	logging.Debug("executeWithPrompts called", "command", command, "args", args)
 	// Parse the command string to handle commands with arguments
 	// This allows for "claude --dangerously-skip-permissions" to be processed correctly
-	cmdParts := strings.Fields(cmd)
+	cmdParts := strings.Fields(command)
 	logging.Debug("Command parts", "parts", cmdParts)
 
 	// Verify the command exists
@@ -70,34 +43,34 @@ func (e *Executor) executeWithPrompts(cmd string, args []string) (string, error)
 		}
 	}
 
-	var command *exec.Cmd
+	var cmd *exec.Cmd
 
 	if len(cmdParts) > 1 {
 		// Command has built-in arguments
-		command = exec.Command(cmdParts[0], append(cmdParts[1:], args...)...)
+		cmd = exec.Command(cmdParts[0], append(cmdParts[1:], args...)...)
 	} else {
 		// Command is a single word
-		command = exec.Command(cmd, args...)
+		cmd = exec.Command(command, args...)
 	}
 
 	// Create pipes for stdin, stdout, stderr
-	stdin, err := command.StdinPipe()
+	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return "", fmt.Errorf("failed to create stdin pipe: %w", err)
 	}
 
-	stdout, err := command.StdoutPipe()
+	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return "", fmt.Errorf("failed to create stdout pipe: %w", err)
 	}
 
-	stderr, err := command.StderrPipe()
+	stderr, err := cmd.StderrPipe()
 	if err != nil {
 		return "", fmt.Errorf("failed to create stderr pipe: %w", err)
 	}
 
 	// Start the command
-	if err := command.Start(); err != nil {
+	if err := cmd.Start(); err != nil {
 		return "", fmt.Errorf("failed to start command: %w", err)
 	}
 
@@ -120,7 +93,19 @@ func (e *Executor) executeWithPrompts(cmd string, args []string) (string, error)
 			for _, pattern := range e.config.Prompt.ConfirmationPatterns {
 				if strings.Contains(line, pattern.Pattern) {
 					// Check if criteria are met
-					if e.checkCriteria(outputBuffer.String(), pattern.Criteria) {
+					// Check if criteria are met
+					shouldConfirm := true // Default to confirming if no criteria
+					if len(pattern.Criteria) > 0 {
+						shouldConfirm = false
+						for _, criterion := range pattern.Criteria {
+							if strings.Contains(outputBuffer.String(), criterion) {
+								shouldConfirm = true
+								break
+							}
+						}
+					}
+
+					if shouldConfirm {
 						// Send confirmation
 						if _, err := fmt.Fprintln(stdin, pattern.Response); err != nil {
 							logging.Warn("Failed to send confirmation response", "error", err)
@@ -137,57 +122,11 @@ func (e *Executor) executeWithPrompts(cmd string, args []string) (string, error)
 	}()
 
 	// Wait for command to complete
-	if err := command.Wait(); err != nil {
+	if err := cmd.Wait(); err != nil {
 		return outputBuffer.String(), fmt.Errorf("command failed: %w", err)
 	}
 
 	return outputBuffer.String(), nil
-}
-
-// extractResponse extracts the response from the CLI tool output
-func (e *Executor) extractResponse(output string) (string, error) {
-	// First check if the output contains a JSON response marker
-	if strings.Contains(output, "RESPONSE_JSON:") {
-		// Extract JSON response
-		parts := strings.Split(output, "RESPONSE_JSON:")
-		if len(parts) < 2 {
-			return "", fmt.Errorf("malformed JSON response")
-		}
-
-		jsonStr := strings.TrimSpace(parts[1])
-		var response struct {
-			Content string `json:"content"`
-		}
-
-		if err := json.Unmarshal([]byte(jsonStr), &response); err != nil {
-			return "", fmt.Errorf("invalid JSON response: %w", err)
-		}
-
-		return response.Content, nil
-	}
-
-	// If no JSON marker, check for plain text response marker
-	if strings.Contains(output, "RESPONSE:") {
-		parts := strings.Split(output, "RESPONSE:")
-		if len(parts) < 2 {
-			return "", fmt.Errorf("malformed response")
-		}
-
-		return strings.TrimSpace(parts[1]), nil
-	}
-
-	// If no markers found, return the full output with a note
-	return fmt.Sprintf("Automated response:\n\n```\n%s\n```", output), nil
-}
-
-// checkCriteria checks if all criteria are present in the output
-func (e *Executor) checkCriteria(output string, criteria []string) bool {
-	for _, criterion := range criteria {
-		if !strings.Contains(output, criterion) {
-			return false
-		}
-	}
-	return true
 }
 
 // Execute runs the configured CLI tool directly with interactive input/output
@@ -233,6 +172,11 @@ func (e *Executor) Execute(args []string) error {
 
 // ExecuteWithOutput runs the CLI tool and returns the output for display in TUI
 func (e *Executor) ExecuteWithOutput(args []string) (string, error) {
+	return e.ExecuteWithPromptsInternal(e.config.CLI.Command, args)
+}
+
+// ExecuteBasic runs the CLI tool and returns the output for display in TUI
+func (e *Executor) ExecuteBasic(args []string) (string, error) {
 	logging.Info("Executing CLI tool with output capture", "command", e.config.CLI.Command, "args", args)
 
 	// Parse the command string to handle commands with arguments

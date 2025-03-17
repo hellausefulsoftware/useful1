@@ -26,6 +26,6 @@ func (p *Provider) GetService() vcs.Service {
 		logging.Error("Failed to create GitHub adapter", "error", err)
 		return nil
 	}
-	
+
 	return adapter
 }

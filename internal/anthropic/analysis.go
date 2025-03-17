@@ -421,15 +421,17 @@ ${transcript}
 
 DO NOT just describe what you would do - I need you to ACTUALLY EXECUTE these commands right now:
 
-1. First, briefly understand what needs to be changed
+1. First, briefly understand what needs to be changed and what specific actions you'll take
 2. Create any necessary files or modify existing files
 3. Run: make lint-all
 4. Run: make test
-5. IMPORTANT: Execute these EXACT commands (replacing placeholders with actual values):
+5. Summarize what you actually implemented in a short, clear description (1-2 sentences)
+6. IMPORTANT: Execute these EXACT commands (replacing placeholders with actual values):
    git add .
-   git commit -m "feat: implement solution for issue #${issue_number}"
+   git commit -m "feat: [specific action taken] for issue #${issue_number}"
    git push origin HEAD
 
+The commit message should clearly describe the specific changes made (e.g., "feat: add user authentication flow" instead of just "implement solution").
 You MUST execute the git commands - do not just suggest them or describe what they do. Actually run them now.`
 
 	prompt = strings.Replace(prompt, "${transcript}", transcript, 1)
@@ -482,13 +484,26 @@ You MUST execute the git commands - do not just suggest them or describe what th
 
 // generatePRDescription creates a detailed PR description using Claude 3.7 Sonnet
 func (a *IssueAnalyzer) generatePRDescription(transcript string, issue *models.Issue, implementationPlan string, changedFiles []string) (string, error) {
+	// Handle empty implementation plan
+	if implementationPlan == "" {
+		implementationPlan = "No implementation provided yet."
+	}
+
+	// Handle empty changed files
+	var changedFilesText string
+	if len(changedFiles) == 0 {
+		changedFilesText = "No files have been changed yet."
+	} else {
+		changedFilesText = strings.Join(changedFiles, "\n")
+	}
+
 	prompt := `You are a senior software engineer creating a detailed, professional pull request (PR) description for a GitHub issue.
-Based on the issue transcript and implementation plan, write a comprehensive PR description that clearly explains the changes.
+Based on the issue transcript, Claude's implementation output, and the list of changed files, write a comprehensive PR description that clearly explains the changes that were made.
 
 ISSUE TRANSCRIPT:
 ${transcript}
 
-IMPLEMENTATION PLAN:
+CLAUDE OUTPUT (implementation that was already done):
 ${implementation_plan}
 
 CHANGED FILES:
@@ -501,28 +516,37 @@ Create a detailed PR description that includes:
    - Expected vs. actual behavior before the fix
    - Root cause analysis (if applicable)
 
-2. Solution Description:
-   - Detailed explanation of the approach taken
-   - Key changes made and their purpose
-   - Design decisions and trade-offs considered
+2. Solution Implemented:
+   - Detailed explanation of the approach that was taken
+   - Key changes that were made and their purpose
+   - Design decisions and trade-offs that were considered
 
-3. Testing:
+3. Testing Performed:
    - How the changes were tested
    - Test cases that validate the solution
-   - Any edge cases that should be considered
+   - Any edge cases that were considered
 
 4. Additional Information:
-   - Potential impact on other systems
+   - Impact on other systems
    - Any migration steps required
-   - Documentation updates needed
+   - Documentation updates included
+
+IMPORTANT:
+- Only include items in your PR description that actually appear in the CLAUDE OUTPUT or CHANGED FILES.
+- Do NOT invent or fabricate activities that don't appear in the output.
+- If the output doesn't mention tests, don't claim tests were performed.
+- Only mention files that were actually changed in the CHANGED FILES section.
+- Be accurate and truthful - if very little was done, keep your description short.
+- Use past tense to describe only the actual work performed.
 
 Format the PR description in Markdown with clear sections, bullet points, and code snippets where appropriate.
-Focus on providing a thorough explanation that would help other developers understand and review the changes effectively.`
+Focus on providing a thorough explanation of what was already implemented, not what will be implemented in the future.
+The implementation is complete - use past tense to describe what was done, not future tense for what will be done.`
 
 	// Replace placeholders
 	prompt = strings.Replace(prompt, "${transcript}", transcript, 1)
 	prompt = strings.Replace(prompt, "${implementation_plan}", implementationPlan, 1)
-	prompt = strings.Replace(prompt, "${changed_files}", strings.Join(changedFiles, "\n"), 1)
+	prompt = strings.Replace(prompt, "${changed_files}", changedFilesText, 1)
 
 	logging.Debug("Sending PR description request to Anthropic API", "model", AnalysisModel)
 

@@ -12,20 +12,20 @@ type Service interface {
 	GetIssueWithComments(owner, repo string, number int) (Issue, error)
 	GetAssignedIssues(username string, since time.Time, limit int) ([]Issue, error)
 	RespondToIssue(owner, repo string, issueNumber int, comment string) error
-	
+
 	// Repository operations
 	GetRepository(owner, repo string) (Repository, error)
 	GetDefaultBranch(owner, repo string) (string, error)
 	CloneRepository(owner, repo, branch string, number int) (string, error)
 	GetRepositories() ([]Repository, error) // Get all accessible repositories for the authenticated user
-	
+
 	// Branch operations
 	CreateBranch(owner, repo, branchName, baseBranch string) error
-	
+
 	// PR operations
 	CreateDraftPullRequest(owner, repo, title, body, head, base string) (PullRequest, error)
 	GetPullRequestsForIssue(owner, repo string, issueNumber int) ([]PullRequest, error)
-	
+
 	// Authentication
 	GetAuthenticatedUser() (string, error)
 }

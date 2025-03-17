@@ -111,7 +111,10 @@ func (a *Adapter) GetIssueWithComments(owner, repo string, number int) (vcs.Issu
 	}
 
 	// Add comments to issue
-	baseIssue := result.(*vcs.BaseIssue)
+	baseIssue, ok := result.(*vcs.BaseIssue)
+	if !ok {
+		return nil, fmt.Errorf("failed to convert issue to BaseIssue type")
+	}
 	baseIssue.Comments = vcsComments
 
 	return baseIssue, nil
@@ -158,7 +161,7 @@ func (a *Adapter) GetAssignedIssues(username string, since time.Time, limit int)
 			logging.Warn("Skipping issue with invalid URL", "url", *issue.HTMLURL)
 			continue
 		}
-		
+
 		owner := parts[3]
 		repo := parts[4]
 
@@ -259,20 +262,24 @@ func (a *Adapter) CloneRepository(owner, repo, branch string, issueNumber int) (
 
 	if repoExists {
 		// Directory exists, update it
-		currentDir, err := os.Getwd()
-		if err != nil {
-			return "", fmt.Errorf("failed to get current directory: %w", err)
+		currentDir, dirErr := os.Getwd()
+		if dirErr != nil {
+			return "", fmt.Errorf("failed to get current directory: %w", dirErr)
 		}
-		defer os.Chdir(currentDir) // Return to original directory when done
+		defer func() {
+			if chDirErr := os.Chdir(currentDir); chDirErr != nil {
+				logging.Warn("Failed to return to original directory", "error", chDirErr)
+			}
+		}() // Return to original directory when done
 
-		if err := os.Chdir(tempDir); err != nil {
-			return "", fmt.Errorf("failed to change to repository directory: %w", err)
+		if chDirErr := os.Chdir(tempDir); chDirErr != nil {
+			return "", fmt.Errorf("failed to change to repository directory: %w", chDirErr)
 		}
 
 		// Fetch latest changes
 		fetchCmd := exec.Command("git", "fetch", "origin")
-		if _, err := fetchCmd.CombinedOutput(); err != nil {
-			return "", fmt.Errorf("failed to fetch latest changes: %w", err)
+		if _, fetchErr := fetchCmd.CombinedOutput(); fetchErr != nil {
+			return "", fmt.Errorf("failed to fetch latest changes: %w", fetchErr)
 		}
 
 		// Checkout branch
@@ -298,10 +305,14 @@ func (a *Adapter) CloneRepository(owner, repo, branch string, issueNumber int) (
 		if err != nil {
 			return "", fmt.Errorf("failed to get current directory: %w", err)
 		}
-		defer os.Chdir(currentDir) // Return to original directory when done
+		defer func() {
+			if chDirErr := os.Chdir(currentDir); chDirErr != nil {
+				logging.Warn("Failed to return to original directory", "error", chDirErr)
+			}
+		}() // Return to original directory when done
 
-		if err := os.Chdir(tempDir); err != nil {
-			return "", fmt.Errorf("failed to change to repository directory: %w", err)
+		if chDirErr := os.Chdir(tempDir); chDirErr != nil {
+			return "", fmt.Errorf("failed to change to repository directory: %w", chDirErr)
 		}
 
 		// Create branch

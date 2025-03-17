@@ -9,14 +9,14 @@ import (
 
 // ImplementationWorkflow represents the complete implementation workflow
 type ImplementationWorkflow struct {
-	config *config.Config
+	config                *config.Config
 	implementationService *services.GitHubImplementationService
 }
 
 // NewImplementationWorkflow creates a new implementation workflow
 func NewImplementationWorkflow(cfg *config.Config) *ImplementationWorkflow {
 	return &ImplementationWorkflow{
-		config: cfg,
+		config:                cfg,
 		implementationService: services.NewGitHubImplementationService(cfg),
 	}
 }
@@ -24,7 +24,7 @@ func NewImplementationWorkflow(cfg *config.Config) *ImplementationWorkflow {
 // NewImplementationWorkflowWithService creates a new implementation workflow with a provided service
 func NewImplementationWorkflowWithService(cfg *config.Config, service *services.GitHubImplementationService) *ImplementationWorkflow {
 	return &ImplementationWorkflow{
-		config: cfg,
+		config:                cfg,
 		implementationService: service,
 	}
 }
@@ -35,7 +35,8 @@ func (w *ImplementationWorkflow) GenerateBranchAndTitle(owner, repo, title, body
 }
 
 // CreateImplementationPlan creates and executes an implementation plan
-func (w *ImplementationWorkflow) CreateImplementationPlan(owner, repo, branchName string, issueNumber int) error {
+// Returns the Claude CLI output for use in PR description
+func (w *ImplementationWorkflow) CreateImplementationPlan(owner, repo, branchName string, issueNumber int) (string, error) {
 	return w.implementationService.CreateImplementationPromptAndExecute(owner, repo, branchName, issueNumber)
 }
 
@@ -45,26 +46,29 @@ func (w *ImplementationWorkflow) CreatePullRequest(owner, repo, branch, base, ti
 }
 
 // CreatePullRequestForIssue creates a PR specifically linked to an issue
-func (w *ImplementationWorkflow) CreatePullRequestForIssue(owner, repo, branch, base string, issueNumber int) (*github.PullRequest, error) {
-	return w.implementationService.CreatePullRequestForIssue(owner, repo, branch, base, issueNumber)
+// claudeOutput parameter contains the implementation output from Claude CLI
+func (w *ImplementationWorkflow) CreatePullRequestForIssue(owner, repo, branch, base string, issueNumber int, claudeOutput string) (*github.PullRequest, error) {
+	return w.implementationService.CreatePullRequestForIssue(owner, repo, branch, base, issueNumber, claudeOutput)
 }
 
 // RespondToIssue posts a comment to a GitHub issue
 func (w *ImplementationWorkflow) RespondToIssue(owner, repo string, issueNumber int, comment string) error {
-	return w.implementationService.RespondToIssue(owner, repo, issueNumber, comment)
+	_, err := w.implementationService.RespondToIssue(owner, repo, issueNumber, comment)
+	return err
 }
 
 // CreateAndImplementIssue creates a branch, implementation plan, and executes it
-func CreateAndImplementIssue(cfg *config.Config, owner, repo string, issueNumber int, title, body string) error {
+// Returns the Claude CLI output for use in PR description
+func CreateAndImplementIssue(cfg *config.Config, owner, repo string, issueNumber int, title, body string) (string, error) {
 	// Create workflow
 	workflow := NewImplementationWorkflow(cfg)
-	
+
 	// Generate branch name and PR title
 	branchName, _, err := workflow.GenerateBranchAndTitle(owner, repo, title, body)
 	if err != nil {
-		return err
+		return "", err
 	}
-	
+
 	// Create and execute implementation plan
 	return workflow.CreateImplementationPlan(owner, repo, branchName, issueNumber)
 }

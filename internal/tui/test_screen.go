@@ -142,7 +142,7 @@ func (t *TestScreen) ShortHelp() []key.Binding {
 func (t *TestScreen) startExecution() tea.Cmd {
 	return func() tea.Msg {
 		// Get the input values
-			_ = t.suiteInput.Value() // testSuite is unused now
+		_ = t.suiteInput.Value() // testSuite is unused now
 
 		// Check if executor is available
 		if t.executor == nil {
