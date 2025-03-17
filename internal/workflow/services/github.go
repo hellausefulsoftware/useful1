@@ -309,7 +309,7 @@ func (s *GitHubImplementationService) CreateImplementationPromptAndExecute(owner
 		}
 	}
 
-	return output, nil
+	return implementationContent, nil
 }
 
 // GenerateBranchAndTitle generates a branch name and PR title
@@ -682,7 +682,8 @@ func (s *GitHubImplementationService) getIssueDetails(client *github.Client, own
 
 // CreatePullRequestForIssue creates a PR specifically linked to an issue
 // claudeOutput parameter contains the implementation output from Claude CLI
-func (s *GitHubImplementationService) CreatePullRequestForIssue(owner, repo, branch, base string, issueNumber int, claudeOutput string) (*github.PullRequest, error) {
+// repoDir is the directory where the repository is cloned
+func (s *GitHubImplementationService) CreatePullRequestForIssue(owner, repo, branch, base string, issueNumber int, claudeOutput string, repoDir string) (*github.PullRequest, error) {
 	// Get issue details first
 	githubClient := createGitHubClient(s.config)
 	issue, _, err := githubClient.Issues.Get(context.Background(), owner, repo, issueNumber)
@@ -716,13 +717,11 @@ func (s *GitHubImplementationService) CreatePullRequestForIssue(owner, repo, bra
 			"token_available", s.config.Anthropic.Token != "",
 			"token_length", len(s.config.Anthropic.Token))
 
-		// Get changed files for context by diffing against default branch
+		// Get changed files for context by diffing against the merge base
 		changedFiles := []string{}
 
-		// Get the default branch name
-		defaultBranch := base // Use base as fallback
-
-		// Try to determine the default branch if needed
+		// Get the default branch name; use base as fallback
+		defaultBranch := base
 		if defaultBranch == "" {
 			// Run git command to get the default branch
 			defaultBranchCmd := exec.Command("git", "symbolic-ref", "refs/remotes/origin/HEAD", "--short")
@@ -742,40 +741,51 @@ func (s *GitHubImplementationService) CreatePullRequestForIssue(owner, repo, bra
 			}
 		}
 
-		// Use double-dot syntax: defaultBranch..HEAD shows what will be merged into the default branch
-		// Run diff command against default branch to get changed files
-		diffCmd := exec.Command("git", "diff", "--name-only", fmt.Sprintf("%s..HEAD", defaultBranch))
+		// Save current directory and change to repo directory if provided
+		currentDir, err := os.Getwd()
+		if err != nil {
+			logging.Warn("Failed to get current directory", "error", err)
+		}
+
+		// Change to repo directory if provided
+		if repoDir != "" {
+			if chDirErr := os.Chdir(repoDir); chDirErr != nil {
+				logging.Warn("Failed to change to repository directory", "error", chDirErr, "repo_dir", repoDir)
+			}
+			defer func() {
+				if returnErr := os.Chdir(currentDir); returnErr != nil {
+					logging.Warn("Failed to change back to original directory", "error", returnErr)
+				}
+			}()
+		}
+
+		// Determine the merge base between defaultBranch and HEAD
+		var mergeBase string
+		mergeBaseCmd := exec.Command("git", "merge-base", defaultBranch, "HEAD")
+		mergeBaseOutput, err := mergeBaseCmd.CombinedOutput()
+		if err != nil {
+			logging.Warn("Failed to get merge base", "error", err, "default_branch", defaultBranch, "output", string(mergeBaseOutput))
+			mergeBase = defaultBranch // fallback to defaultBranch
+		} else {
+			mergeBase = strings.TrimSpace(string(mergeBaseOutput))
+		}
+
+		// Run diff command from the merge base to HEAD to get changed files
+		diffCmd := exec.Command("git", "diff", "--name-only", mergeBase, "HEAD")
 		diffOutput, err := diffCmd.CombinedOutput()
 		if err == nil {
-			// Split the output into lines to get individual files
 			for _, line := range strings.Split(string(diffOutput), "\n") {
 				if line = strings.TrimSpace(line); line != "" {
 					changedFiles = append(changedFiles, line)
 				}
 			}
-			logging.Info("Retrieved changed files from diff with default branch",
+			logging.Info("Retrieved changed files using merge base",
 				"file_count", len(changedFiles),
-				"default_branch", defaultBranch)
+				"merge_base", mergeBase)
 		} else {
-			logging.Warn("Failed to get changed files from diff with default branch",
+			logging.Warn("Failed to get changed files from diff using merge base",
 				"error", err,
-				"default_branch", defaultBranch,
 				"output", string(diffOutput))
-
-			// Fallback: try listing files that differ from origin/defaultBranch if available
-			fallbackDiffCmd := exec.Command("git", "diff", "--name-only", fmt.Sprintf("origin/%s..HEAD", defaultBranch))
-			fallbackOutput, fallbackErr := fallbackDiffCmd.CombinedOutput()
-			if fallbackErr == nil {
-				// Process the fallback results
-				for _, line := range strings.Split(string(fallbackOutput), "\n") {
-					if line = strings.TrimSpace(line); line != "" {
-						changedFiles = append(changedFiles, line)
-					}
-				}
-				logging.Info("Retrieved changed files using fallback diff with origin/default branch",
-					"file_count", len(changedFiles),
-					"default_branch", defaultBranch)
-			}
 		}
 
 		// Generate AI-powered PR description with issue context and Claude output
@@ -797,11 +807,11 @@ func (s *GitHubImplementationService) CreatePullRequestForIssue(owner, repo, bra
 	body += fmt.Sprintf("\n\nCloses #%d\n\n**This PR was generated using [useful1](https://github.com/hellausefulsoftware/useful1)**", issueNumber)
 
 	// Call the regular PR creation with the issue-specific information
-	return s.createPullRequestInternal(owner, repo, branch, base, title, body, issueNumber)
+	return s.createPullRequestInternal(owner, repo, branch, base, title, body, issueNumber, repoDir)
 }
 
 // createPullRequestInternal is a shared implementation for creating PRs
-func (s *GitHubImplementationService) createPullRequestInternal(owner, repo, branch, base, title, body string, issueNum int) (*github.PullRequest, error) {
+func (s *GitHubImplementationService) createPullRequestInternal(owner, repo, branch, base, title, body string, issueNum int, repoDir string) (*github.PullRequest, error) {
 	logging.Info("Creating pull request",
 		"owner", owner,
 		"repo", repo,
@@ -890,140 +900,6 @@ func (s *GitHubImplementationService) createPullRequestInternal(owner, repo, bra
 	}
 
 	return pr, nil
-}
-
-// CreatePullRequest creates a new pull request with AI-generated description
-func (s *GitHubImplementationService) CreatePullRequest(owner, repo, branch, base, title string) (*github.PullRequest, error) {
-	logging.Info("Creating pull request",
-		"owner", owner,
-		"repo", repo,
-		"branch", branch,
-		"base", base,
-		"title", title)
-
-	// Extract issue number from title if present
-	issueNum := 0
-	if strings.Contains(title, "#") {
-		parts := strings.Split(title, "#")
-		if len(parts) > 1 {
-			numStr := strings.Split(parts[1], " ")[0]
-			num, err := strconv.Atoi(numStr)
-			if err == nil {
-				issueNum = num
-			}
-		}
-	}
-
-	// Create a minimal issue model for analysis
-	issue := &models.Issue{
-		Owner:  owner,
-		Repo:   repo,
-		Number: issueNum,
-		Title:  title,
-		Body:   fmt.Sprintf("Branch: %s\nBase: %s", branch, base),
-	}
-
-	// Generate PR description using Anthropic API
-	var body string
-
-	if s.config.Anthropic.Token != "" {
-		// Create Anthropic analyzer with proper config
-		analyzer := anthropic.NewAnalyzer(s.config)
-		logging.Info("Created Anthropic analyzer for PR description",
-			"token_available", s.config.Anthropic.Token != "",
-			"token_length", len(s.config.Anthropic.Token))
-
-		// Get changed files for context by diffing against default branch
-		changedFiles := []string{}
-
-		// Get the default branch name
-		defaultBranch := base // Use base as fallback
-
-		// Try to determine the default branch if needed
-		if defaultBranch == "" {
-			// Run git command to get the default branch
-			defaultBranchCmd := exec.Command("git", "symbolic-ref", "refs/remotes/origin/HEAD", "--short")
-			defaultBranchOutput, err := defaultBranchCmd.CombinedOutput()
-			if err == nil {
-				// Format is usually "origin/main" or "origin/master"
-				fullBranch := strings.TrimSpace(string(defaultBranchOutput))
-				parts := strings.Split(fullBranch, "/")
-				if len(parts) > 1 {
-					defaultBranch = parts[1]
-					logging.Info("Detected default branch", "branch", defaultBranch)
-				}
-			} else {
-				logging.Warn("Failed to detect default branch, using base branch instead",
-					"error", err,
-					"base", base)
-			}
-		}
-		// Use double-dot syntax: defaultBranch..HEAD shows what will be merged into the default branch
-
-		// Run diff command against default branch to get changed files
-		diffCmd := exec.Command("git", "diff", "--name-only", fmt.Sprintf("%s..HEAD", defaultBranch))
-		diffOutput, err := diffCmd.CombinedOutput()
-		if err == nil {
-			// Split the output into lines to get individual files
-			for _, line := range strings.Split(string(diffOutput), "\n") {
-				if line = strings.TrimSpace(line); line != "" {
-					changedFiles = append(changedFiles, line)
-				}
-			}
-			logging.Info("Retrieved changed files from diff with default branch",
-				"file_count", len(changedFiles),
-				"default_branch", defaultBranch)
-		} else {
-			logging.Warn("Failed to get changed files from diff with default branch",
-				"error", err,
-				"default_branch", defaultBranch,
-				"output", string(diffOutput))
-
-			// Fallback: try listing files that differ from origin/defaultBranch if available
-			fallbackDiffCmd := exec.Command("git", "diff", "--name-only", fmt.Sprintf("origin/%s..HEAD", defaultBranch))
-			fallbackOutput, fallbackErr := fallbackDiffCmd.CombinedOutput()
-			if fallbackErr == nil {
-				// Process the fallback results
-				for _, line := range strings.Split(string(fallbackOutput), "\n") {
-					if line = strings.TrimSpace(line); line != "" {
-						changedFiles = append(changedFiles, line)
-					}
-				}
-				logging.Info("Retrieved changed files using fallback diff with origin/default branch",
-					"file_count", len(changedFiles),
-					"default_branch", defaultBranch)
-			}
-		}
-
-		// If issue number available, try to get full issue details
-		if issueNum > 0 {
-			githubClient := createGitHubClient(s.config)
-			fullIssue, issueErr := s.getIssueDetails(githubClient, owner, repo, issueNum)
-			if issueErr == nil {
-				issue = fullIssue
-			}
-		}
-
-		// Generate AI-powered PR description
-		aiGeneratedPR, err := analyzer.GeneratePRDescription(issue, "", changedFiles)
-		if err != nil {
-			logging.Warn("Failed to generate PR description with Anthropic API, using simple description",
-				"error", err)
-			body = fmt.Sprintf("PR for %s", title)
-		} else {
-			body = aiGeneratedPR
-			logging.Info("Successfully generated PR description with Anthropic API",
-				"description_length", len(body))
-		}
-	} else {
-		body = fmt.Sprintf("PR for %s", title)
-	}
-
-	// Add footer
-	body += "\n\n**This PR was generated using [useful1](https://github.com/hellausefulsoftware/useful1)**"
-
-	// Call the shared implementation
-	return s.createPullRequestInternal(owner, repo, branch, base, title, body, issueNum)
 }
 
 // RespondToIssue posts a comment to a GitHub issue

@@ -34,21 +34,17 @@ func (w *ImplementationWorkflow) GenerateBranchAndTitle(owner, repo, title, body
 	return w.implementationService.GenerateBranchAndTitle(owner, repo, title, body)
 }
 
-// CreateImplementationPlan creates and executes an implementation plan
+// CreateImplementationPromptAndExecute creates and executes an implementation plan
 // Returns the Claude CLI output for use in PR description
-func (w *ImplementationWorkflow) CreateImplementationPlan(owner, repo, branchName string, issueNumber int) (string, error) {
+func (w *ImplementationWorkflow) CreateImplementationPromptAndExecute(owner, repo, branchName string, issueNumber int) (string, error) {
 	return w.implementationService.CreateImplementationPromptAndExecute(owner, repo, branchName, issueNumber)
-}
-
-// CreatePullRequest creates a new pull request with AI-generated description
-func (w *ImplementationWorkflow) CreatePullRequest(owner, repo, branch, base, title string) (*github.PullRequest, error) {
-	return w.implementationService.CreatePullRequest(owner, repo, branch, base, title)
 }
 
 // CreatePullRequestForIssue creates a PR specifically linked to an issue
 // claudeOutput parameter contains the implementation output from Claude CLI
-func (w *ImplementationWorkflow) CreatePullRequestForIssue(owner, repo, branch, base string, issueNumber int, claudeOutput string) (*github.PullRequest, error) {
-	return w.implementationService.CreatePullRequestForIssue(owner, repo, branch, base, issueNumber, claudeOutput)
+// repoDir is the directory where the repository is cloned
+func (w *ImplementationWorkflow) CreatePullRequestForIssue(owner, repo, branch, base string, issueNumber int, claudeOutput string, repoDir string) (*github.PullRequest, error) {
+	return w.implementationService.CreatePullRequestForIssue(owner, repo, branch, base, issueNumber, claudeOutput, repoDir)
 }
 
 // RespondToIssue posts a comment to a GitHub issue
@@ -70,5 +66,5 @@ func CreateAndImplementIssue(cfg *config.Config, owner, repo string, issueNumber
 	}
 
 	// Create and execute implementation plan
-	return workflow.CreateImplementationPlan(owner, repo, branchName, issueNumber)
+	return workflow.CreateImplementationPromptAndExecute(owner, repo, branchName, issueNumber)
 }

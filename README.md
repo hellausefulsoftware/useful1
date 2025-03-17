@@ -39,40 +39,23 @@ Specific repository:
 ./bin/useful1 monitor --repo owner/repo --once
 ```
 
-### Manual Issue Handling
+### GitHub Monitoring 
 
-Manually process a specific issue:
+Monitor GitHub issues:
 ```bash
-./bin/useful1 respond 123 --implement
-```
-
-### Create Pull Requests
-
-Manual PR creation:
-```bash
-./bin/useful1 pr feature-branch "Feature description"
-```
-
-### Run Tests
-
-Execute tests:
-```bash
-./bin/useful1 test integration
+./bin/useful1 monitor --repo owner/repo
 ```
 
 ### CLI
 
-Structured JSON output:
-```bash
-./bin/useful1 respond --issue 123 --owner myorg --repo myrepo
-./bin/useful1 pr --branch feature-branch --base main --title "New feature"
-./bin/useful1 test --suite integration
-```
-
 Interactive TUI mode:
 ```bash
 ./bin/useful1 --tui
-./bin/useful1 --tui respond
+```
+
+Configuration:
+```bash
+./bin/useful1 config
 ```
 
 ## Project Structure

@@ -7,7 +7,6 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
-	"time"
 
 	"github.com/hellausefulsoftware/useful1/internal/cli"
 	"github.com/hellausefulsoftware/useful1/internal/common/vcs"
@@ -93,67 +92,6 @@ func main() {
 
 		logging.Info("Starting useful1", "version", "1.0.0")
 	}
-
-	// Define subcommands
-	respondCmd := &cobra.Command{
-		Use:   "respond",
-		Short: "Respond to GitHub issues (use --tui for interactive mode)",
-		Run: func(cmd *cobra.Command, args []string) {
-			if tuiMode {
-				// Run TUI with the respond screen
-				runTUIWithScreen(tui.ScreenRespond)
-				return
-			}
-			// Run CLI executor by default
-			runCLIExecutor(cmd, tui.ScreenRespond)
-		},
-	}
-	// Add flags for respond command
-	respondCmd.Flags().String("issue", "", "GitHub issue number")
-	respondCmd.Flags().String("issue-file", "", "File containing issue text")
-	respondCmd.Flags().String("owner", "", "GitHub repository owner")
-	respondCmd.Flags().String("repo", "", "GitHub repository name")
-	respondCmd.Flags().Int("number", 0, "GitHub issue number (when used with issue-file)")
-	respondCmd.Flags().String("template", "", "Response template name")
-	respondCmd.Flags().Float64("budget", 0, "Budget for this operation")
-
-	prCmd := &cobra.Command{
-		Use:   "pr",
-		Short: "Create a pull request (use --tui for interactive mode)",
-		Run: func(cmd *cobra.Command, args []string) {
-			if tuiMode {
-				// Run TUI with the PR screen
-				runTUIWithScreen(tui.ScreenPR)
-				return
-			}
-			// Run CLI executor by default
-			runCLIExecutor(cmd, tui.ScreenPR)
-		},
-	}
-	// Add flags for pr command
-	prCmd.Flags().String("branch", "", "Branch name for the pull request")
-	prCmd.Flags().String("base", "main", "Base branch for the pull request")
-	prCmd.Flags().String("title", "", "Title for the pull request")
-	prCmd.Flags().String("body", "", "Body content for the pull request")
-
-	testCmd := &cobra.Command{
-		Use:   "test",
-		Short: "Run tests",
-		Run: func(cmd *cobra.Command, args []string) {
-			if tuiMode {
-				// In TUI mode, just show a message that this feature is not available in TUI
-				logging.Info("Test command is not available in TUI mode")
-				fmt.Println("The test command is not available in TUI mode. Use CLI mode instead.")
-				os.Exit(1)
-				return
-			}
-			// Run CLI executor by default
-			runCLIExecutor(cmd, tui.ScreenTest)
-		},
-	}
-	// Add flags for test command
-	testCmd.Flags().String("suite", "", "Test suite to run")
-	testCmd.Flags().Bool("verbose", false, "Enable verbose output")
 
 	configCmd := &cobra.Command{
 		Use:   "config",
@@ -253,7 +191,7 @@ func main() {
 	}
 
 	// Add commands for help/completion
-	rootCmd.AddCommand(respondCmd, prCmd, testCmd, configCmd, monitorCmd, executeCmd)
+	rootCmd.AddCommand(configCmd, monitorCmd, executeCmd)
 
 	// Execute root command
 	if err := rootCmd.Execute(); err != nil {
@@ -329,83 +267,6 @@ func runCLIExecutor(cmd *cobra.Command, screenType tui.ScreenType) {
 	// Process command based on screen type
 	var cmdErr error
 	switch screenType {
-	case tui.ScreenRespond:
-		// Issue response functionality has been moved to workflow package
-		cmdErr = fmt.Errorf("issue response functionality has been moved to the workflow package")
-	case tui.ScreenPR:
-		// Extract values needed for PR command
-		branch, err := flags.GetString("branch")
-		if err != nil {
-			cmdErr = fmt.Errorf("failed to get branch parameter: %w", err)
-			break
-		}
-		base, err := flags.GetString("base")
-		if err != nil {
-			cmdErr = fmt.Errorf("failed to get base parameter: %w", err)
-			break
-		}
-		title, err := flags.GetString("title")
-		if err != nil {
-			cmdErr = fmt.Errorf("failed to get title parameter: %w", err)
-			break
-		}
-
-		if branch == "" {
-			cmdErr = fmt.Errorf("missing required argument: branch")
-			break
-		}
-
-		if base == "" {
-			base = "main" // Default base branch
-		}
-
-		// Create workflow instance and use it to create PR
-		w := workflow.NewImplementationWorkflow(cfg)
-
-		// Get owner and repo from config
-		owner := cfg.GitHub.User
-		repo := "useful1" // Hard-coded for now - would come from selection
-
-		if owner == "" {
-			cmdErr = fmt.Errorf("missing GitHub owner or repo in config")
-			break
-		}
-
-		// Create the pull request
-		pr, err := w.CreatePullRequest(owner, repo, branch, base, title)
-		if err != nil {
-			cmdErr = fmt.Errorf("failed to create pull request: %w", err)
-			break
-		}
-
-		// Output JSON response
-		response := map[string]interface{}{
-			"status":    "success",
-			"branch":    branch,
-			"base":      base,
-			"title":     title,
-			"pr_number": *pr.Number,
-			"pr_url":    *pr.HTMLURL,
-			"timestamp": time.Now().Format(time.RFC3339),
-		}
-
-		jsonResponse, err := json.Marshal(response)
-		if err != nil {
-			cmdErr = fmt.Errorf("error formatting JSON response: %w", err)
-			break
-		}
-
-		fmt.Println(string(jsonResponse))
-
-	case tui.ScreenTest:
-		// Extract values needed for test command
-		_, err := flags.GetString("suite")
-		if err != nil {
-			cmdErr = fmt.Errorf("failed to get suite parameter: %w", err)
-			break
-		}
-		cmdErr = fmt.Errorf("test execution functionality has been moved to the workflow package")
-
 	case tui.ScreenConfig:
 		// Config shows success in CLI mode since config is already loaded
 		logging.Info("Configuration loaded successfully")
@@ -566,7 +427,7 @@ func runCLIExecutor(cmd *cobra.Command, screenType tui.ScreenType) {
 			}
 
 			// Create implementation plan and get Claude output
-			claudeOutput, planErr := implementationWorkflow.CreateImplementationPlan(
+			claudeOutput, planErr := implementationWorkflow.CreateImplementationPromptAndExecute(
 				issue.GetOwner(),
 				issue.GetRepo(),
 				branchName,
@@ -578,13 +439,18 @@ func runCLIExecutor(cmd *cobra.Command, screenType tui.ScreenType) {
 				// Continue anyway - we'll still create the PR
 			}
 
-			// Create the draft PR
-			logging.Info("Creating draft PR",
+			logging.Info("Creating PR",
 				"owner", issue.GetOwner(),
 				"repo", issue.GetRepo(),
 				"title", prTitle,
 				"branch", branchName,
 				"base", defaultBranch)
+
+			// Get home directory for repository path
+			homeDir, homeDirErr := os.UserHomeDir()
+			if homeDirErr != nil {
+				return fmt.Errorf("failed to get user home directory: %w", homeDirErr)
+			}
 
 			// Create the PR using the implementation output
 			pr, prErr := implementationWorkflow.CreatePullRequestForIssue(
@@ -594,6 +460,8 @@ func runCLIExecutor(cmd *cobra.Command, screenType tui.ScreenType) {
 				defaultBranch,
 				issue.GetNumber(),
 				claudeOutput,
+				// Pass the repository directory that was used for implementation
+				fmt.Sprintf("%s/.useful1/temp/%s_%d", homeDir, issue.GetRepo(), issue.GetNumber()),
 			)
 			if prErr != nil {
 				return fmt.Errorf("failed to create draft PR: %w", prErr)

@@ -124,8 +124,6 @@ func NewApp(cfg *config.Config) *App {
 	app.screens[ScreenMainMenu] = NewMainMenuScreen(app)
 
 	// Only initialize screens that need config if config exists
-	app.screens[ScreenRespond] = NewRespondScreen(app)
-	app.screens[ScreenPR] = NewPRScreen(app)
 	app.screens[ScreenConfig] = NewConfigScreen(app)
 	app.screens[ScreenMonitor] = NewMonitorScreen(app)
 	app.screens[ScreenExecute] = NewExecuteScreen(app)

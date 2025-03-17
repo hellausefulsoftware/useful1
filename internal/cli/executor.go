@@ -150,15 +150,15 @@ func (e *Executor) ExecuteWithOutput(args []string, promptContent string) (strin
 			if emptyOutputCount > 5 && !promptSent && promptContent != "" {
 				logging.Info("Multiple empty outputs detected, sending prompt content")
 				promptSent = true
-				if err := exp.Send(promptContent + "\n"); err != nil {
-					logging.Error("Failed to send prompt content", "error", err)
-					return output.String(), err
+				if sendErr := exp.Send(promptContent + "\n"); sendErr != nil {
+					logging.Error("Failed to send prompt content", "error", sendErr)
+					return output.String(), sendErr
 				}
 			} else if emptyOutputCount > 10 {
 				logging.Info("Assuming process is running despite empty outputs")
 				promptSent = true
-				if err := exp.Send("\r"); err != nil {
-					logging.Error("Failed to send newline", "error", err)
+				if sendErr := exp.Send("\r"); sendErr != nil {
+					logging.Error("Failed to send newline", "error", sendErr)
 				}
 				return "Command appears to be running but not producing detectable output", nil
 			}
@@ -179,9 +179,9 @@ func (e *Executor) ExecuteWithOutput(args []string, promptContent string) (strin
 				if emptyOutputCount > 3 && !promptSent && promptContent != "" {
 					logging.Info("Timeout with multiple empty outputs, sending prompt content")
 					promptSent = true
-					if err := exp.Send(promptContent + "\n"); err != nil {
-						logging.Error("Failed to send prompt content", "error", err)
-						return output.String(), err
+					if sendErr := exp.Send(promptContent + "\n"); sendErr != nil {
+						logging.Error("Failed to send prompt content", "error", sendErr)
+						return output.String(), sendErr
 					}
 				}
 				continue

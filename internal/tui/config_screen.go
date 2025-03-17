@@ -12,6 +12,12 @@ import (
 	"github.com/hellausefulsoftware/useful1/internal/github"
 )
 
+// executionResultMsg represents a message with execution results
+type executionResultMsg struct {
+	output string
+	err    error
+}
+
 // Field indices for the config screen
 const (
 	fieldGitHubToken = iota

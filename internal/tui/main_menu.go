@@ -25,8 +25,6 @@ func NewMainMenuScreen(app *App) *MainMenuScreen {
 	m := &MainMenuScreen{
 		BaseScreen: NewBaseScreen(app, "Useful1 CLI"),
 		items: []MenuItem{
-			{title: "Respond", description: "Respond to GitHub issues", screen: ScreenRespond},
-			{title: "PR", description: "Create pull requests", screen: ScreenPR},
 			{title: "Config", description: "Configure settings", screen: ScreenConfig},
 			{title: "Monitor", description: "Monitor GitHub issues", screen: ScreenMonitor},
 			{title: "Execute", description: "Run the CLI tool directly", screen: ScreenExecute},

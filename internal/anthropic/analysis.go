@@ -101,8 +101,11 @@ func (a *IssueAnalyzer) GeneratePRDescription(issue *models.Issue, implementatio
 	// Create a complete transcript of the issue for analysis
 	transcript := formatIssueTranscript(issue)
 
+	// Log the implementation plan for debugging purposes
+	logging.Info("Generating PR description", "implementationPlan", implementationPlan)
+
 	// Use Claude 3.7 Sonnet to generate a detailed PR description
-	return a.generatePRDescription(transcript, issue, implementationPlan, changedFiles)
+	return a.generatePRDescription(transcript, implementationPlan, changedFiles)
 }
 
 // AnalyzeIssue analyzes an issue using the Anthropic API and returns a branch name suggestion
@@ -486,7 +489,7 @@ Given all of the above parameters, what is the step by step plan? Do not omit or
 }
 
 // generatePRDescription creates a detailed PR description using Claude 3.7 Sonnet
-func (a *IssueAnalyzer) generatePRDescription(transcript string, issue *models.Issue, implementationPlan string, changedFiles []string) (string, error) {
+func (a *IssueAnalyzer) generatePRDescription(transcript string, implementationPlan string, changedFiles []string) (string, error) {
 	// Handle empty implementation plan
 	if implementationPlan == "" {
 		implementationPlan = "No implementation provided yet."

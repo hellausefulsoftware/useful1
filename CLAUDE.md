@@ -17,15 +17,15 @@
 - Get exact context for editing: `rg -A 3 -B 3 "pattern" file.go`
 
 ## Command Usage
-- Respond to issue: `./bin/useful1 respond --issue [number] --owner [owner] --repo [repo]`
-- Create PR: `./bin/useful1 pr --branch [branch] --base [base-branch] --title "[title]"`
-- Run tests: `./bin/useful1 test --suite [suite-name]`
+- Configuration: `./bin/useful1 config`
+- Execute Claude CLI directly: `./bin/useful1 execute [arguments...]`
 
 ### GitHub Monitoring Commands
 - Monitor with CLI (default): `./bin/useful1 monitor --repo [owner/repo] --interval [seconds]` (default: 60 seconds)
 - Run once: `./bin/useful1 monitor --repo [owner/repo] --once`
 - Monitor with TUI: `./bin/useful1 --tui monitor --repo [owner/repo] --interval [seconds]` (default: 60 seconds)
   - Press 'q' to exit the TUI
+- Use TUI main menu: `./bin/useful1 --tui`
 - Run with debug logs: `./bin/useful1 --log-level debug monitor --repo [owner/repo]`
 - Enable auto-respond: `./bin/useful1 monitor --repo [owner/repo] --auto-respond`
 
