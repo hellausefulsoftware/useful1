@@ -175,7 +175,7 @@ func (e *Executor) ExecuteWithOutput(args []string, promptContent string) (strin
 			}
 			output.WriteString(result)
 			if err.Error() == "expect: timeout" {
-				logging.Info("Expect timed out waiting for more output", "timeout_seconds", 5)
+				logging.Info("Expect timed out waiting for more output", "timeout_seconds")
 				if emptyOutputCount > 3 && !promptSent && promptContent != "" {
 					logging.Info("Timeout with multiple empty outputs, sending prompt content")
 					promptSent = true
@@ -284,9 +284,10 @@ func (e *Executor) ExecuteWithOutput(args []string, promptContent string) (strin
 			output.WriteString(result)
 			logging.Info("'esc to interrupt' detected; updating last detection time")
 		}
+		/* TODO: this detection is not working reliably, hence the 5 minute timout */
 		// If 5 seconds have passed with no new detection, exit monitoring.
-		if time.Since(lastDetection) >= 5*time.Second {
-			logging.Info("No new 'esc to interrupt' detected in the last 5 seconds; exiting monitoring phase")
+		if time.Since(lastDetection) >= 300*time.Second {
+			logging.Info("No new 'esc to interrupt' detected in the last 5 minutes; exiting monitoring phase")
 			break
 		}
 	}
