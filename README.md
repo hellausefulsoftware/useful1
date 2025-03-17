@@ -77,18 +77,24 @@ useful1/
 └── Makefile                       # Build automation
 ```
 
-## Supported Tools
+## Supported Agentic CLI Tools (For making changes)
 
-- **CLI Tools:**
   - [Claude Code](https://www.npmjs.com/package/@anthropic-ai/claude-code)
   - Roocode (coming soon)
   - Cline (coming soon)
 
-## Supported VCS Platforms
+## Supported VCS Platforms (For responding to issues)
 
 - [GitHub](https://github.com)
 - GitLab (coming soon)
 - Gogs (coming soon)
+
+## Supported AI Summarization tools (For summarizing issues and creating plans)
+
+- [Claude](https://claude.ai)
+- OpenAI (coming soon)
+- Mistral (coming soon)
+
 
 ## Contributing
 
