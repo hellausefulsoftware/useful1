@@ -13,7 +13,7 @@ import (
 	"github.com/hellausefulsoftware/useful1/internal/config"
 )
 
-// TestExecuteCommandFlagHandling tests that the 'execute' command 
+// TestExecuteCommandFlagHandling tests that the 'execute' command
 // correctly passes all arguments (including flags) to the underlying tool
 func TestExecuteCommandFlagHandling(t *testing.T) {
 	// Skip this test when running 'go test ./...' without the 'integration' tag
@@ -67,23 +67,23 @@ func TestExecuteCommandFlagHandling(t *testing.T) {
 
 	// Setup test cases
 	testCases := []struct {
-		name      string
-		args      []string
+		name          string
+		args          []string
 		expectContain []string
 	}{
 		{
-			name: "Simple arguments",
-			args: []string{"arg1", "arg2", "arg3"},
+			name:          "Simple arguments",
+			args:          []string{"arg1", "arg2", "arg3"},
 			expectContain: []string{"arg1", "arg2", "arg3"},
 		},
 		{
-			name: "Flag arguments",
-			args: []string{"-p", "paramValue", "--flag", "value"},
+			name:          "Flag arguments",
+			args:          []string{"-p", "paramValue", "--flag", "value"},
 			expectContain: []string{"-p", "paramValue", "--flag", "value"},
 		},
 		{
-			name: "Mixed arguments",
-			args: []string{"normal", "-p", "flag-value", "--long-flag"},
+			name:          "Mixed arguments",
+			args:          []string{"normal", "-p", "flag-value", "--long-flag"},
 			expectContain: []string{"normal", "-p", "flag-value", "--long-flag"},
 		},
 	}
@@ -96,7 +96,7 @@ func TestExecuteCommandFlagHandling(t *testing.T) {
 			cmd := exec.Command(binaryPath, args...)
 
 			// Setup environment to use test config
-			cmd.Env = append(os.Environ(), 
+			cmd.Env = append(os.Environ(),
 				fmt.Sprintf("USEFUL1_CONFIG=%s", tmpConfig),
 				"GITHUB_TOKEN=dummy-token",
 				"ANTHROPIC_API_KEY=dummy-token")
@@ -109,12 +109,12 @@ func TestExecuteCommandFlagHandling(t *testing.T) {
 			// Add timeout to prevent hanging
 			timeout := time.After(5 * time.Second)
 			done := make(chan error, 1)
-			
+
 			// Run command in a goroutine
 			go func() {
 				done <- cmd.Run()
 			}()
-			
+
 			// Wait for command to finish or timeout
 			select {
 			case <-timeout:
@@ -128,7 +128,7 @@ func TestExecuteCommandFlagHandling(t *testing.T) {
 
 			// Check output (combined stdout and stderr)
 			output := stdout.String() + stderr.String()
-			
+
 			// Look for expected arguments in the output
 			for _, expected := range tc.expectContain {
 				if !strings.Contains(output, expected) {

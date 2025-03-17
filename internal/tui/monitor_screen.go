@@ -11,8 +11,10 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/hellausefulsoftware/useful1/internal/cli"
+	"github.com/hellausefulsoftware/useful1/internal/common/vcs"
 	"github.com/hellausefulsoftware/useful1/internal/github"
 	"github.com/hellausefulsoftware/useful1/internal/logging"
+	"github.com/hellausefulsoftware/useful1/internal/workflow"
 )
 
 // Repository represents a GitHub repository for display
@@ -31,7 +33,8 @@ type MonitorScreen struct {
 	BaseScreen
 	spinner          spinner.Model
 	executor         *cli.Executor
-	monitor          *github.Monitor
+	vcsService       vcs.Service       // Platform-agnostic VCS service
+	monitor          *vcs.Monitor      // Platform-agnostic VCS monitor
 	running          bool
 	runOnce          bool
 	pollTime         time.Time
@@ -55,25 +58,84 @@ type Issue struct {
 	Status string
 }
 
+// tuiIssueProcessor implements the vcs.IssueProcessor interface for TUI
+type tuiIssueProcessor struct {
+	app       *App
+	vcsService vcs.Service
+}
+
+// Process handles processing an issue in the TUI context
+func (p *tuiIssueProcessor) Process(issue vcs.Issue) error {
+	logging.Info("Processing issue in TUI",
+		"number", issue.GetNumber(),
+		"owner", issue.GetOwner(),
+		"repo", issue.GetRepo(),
+		"title", issue.GetTitle())
+
+	// Check if auto-processing is enabled - this would be a TUI setting
+	if !p.app.GetConfig().Monitor.AutoRespond {
+		// Just return if auto-processing is disabled
+		return nil
+	}
+	
+	// Use the implementation workflow to handle the complete process
+	return workflow.CreateAndImplementIssue(
+		p.app.GetConfig(),
+		issue.GetOwner(),
+		issue.GetRepo(),
+		issue.GetNumber(),
+		issue.GetTitle(),
+		issue.GetBody(),
+	)
+}
+
 // NewMonitorScreen creates a new monitor screen
 func NewMonitorScreen(app *App) *MonitorScreen {
 	s := spinner.New()
 	s.Spinner = spinner.Dot
 
 	var executor *cli.Executor
-	if app.GetConfig() != nil {
+	
+	// Create GitHub client directly
+	if app.GetConfig() != nil && app.GetConfig().GitHub.Token != "" {
+		// Initialize executor for CLI operations
 		executor = cli.NewExecutor(app.GetConfig())
 	}
 
-	var monitor *github.Monitor
-	if app.GetConfig() != nil && executor != nil {
-		monitor = github.NewMonitor(app.GetConfig(), executor)
+	// Create VCS service
+	var vcsService vcs.Service
+	var monitor *vcs.Monitor
+	
+	if app.GetConfig() != nil {
+		// Create GitHub adapter 
+		if adapter, err := github.NewAdapter(app.GetConfig()); err == nil {
+			vcsService = adapter
+			
+			// Create a custom processor for the TUI
+			processor := &tuiIssueProcessor{
+				app: app,
+				vcsService: adapter,
+			}
+			
+			// Create monitor config
+			monitorConfig := vcs.MonitorConfig{
+				Config:    app.GetConfig(),
+				Service:   adapter,
+				Processor: processor,
+			}
+			
+			// Create monitor
+			if m, err := vcs.NewMonitor(monitorConfig); err == nil {
+				monitor = m
+			}
+		}
 	}
 
 	screen := &MonitorScreen{
 		BaseScreen:       NewBaseScreen(app, "Monitor GitHub Issues"),
 		spinner:          s,
 		executor:         executor,
+		vcsService:       vcsService,
 		monitor:          monitor,
 		running:          false,
 		logs:             []string{},
@@ -85,8 +147,8 @@ func NewMonitorScreen(app *App) *MonitorScreen {
 		selectAllRepos:   true,
 	}
 
-	// Queue loading repositories if the client is available
-	if app.GetConfig() != nil && executor != nil {
+	// Queue loading repositories if the service is available
+	if app.GetConfig() != nil && vcsService != nil {
 		screen.fetchingRepos = true
 	}
 
@@ -111,15 +173,15 @@ func (m *MonitorScreen) Init() tea.Cmd {
 
 // fetchRepositories fetches repositories the user has access to
 func (m *MonitorScreen) fetchRepositories() tea.Msg {
-	if m.executor == nil || m.executor.GetGitHubClient() == nil {
+	if m.vcsService == nil {
 		return fetchRepositoriesMsg{
 			repos: nil,
-			err:   fmt.Errorf("GitHub client not configured"),
+			err:   fmt.Errorf("VCS service not configured"),
 		}
 	}
 
-	// Fetch repositories
-	ghRepos, err := m.executor.GetGitHubClient().GetRepositories()
+	// Fetch repositories from the VCS service
+	vcsRepos, err := m.vcsService.GetRepositories()
 	if err != nil {
 		return fetchRepositoriesMsg{
 			repos: nil,
@@ -128,14 +190,17 @@ func (m *MonitorScreen) fetchRepositories() tea.Msg {
 	}
 
 	// Convert to our Repository type
-	repos := make([]Repository, 0, len(ghRepos))
-	for _, repo := range ghRepos {
-		if repo.GetName() == "" || repo.GetOwner() == nil {
+	repos := make([]Repository, 0, len(vcsRepos))
+	for _, repo := range vcsRepos {
+		ownerName := repo.GetOwner()
+		repoName := repo.GetName()
+		
+		if repoName == "" || ownerName == "" {
 			continue
 		}
 
 		repos = append(repos, Repository{
-			FullName:      repo.GetFullName(),
+			FullName:      ownerName + "/" + repoName,
 			Description:   repo.GetDescription(),
 			Selected:      true, // Default to selected
 			HasIssues:     repo.GetHasIssues(),
@@ -243,7 +308,7 @@ func (m *MonitorScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 					// Update the monitor with the new config
 					if m.monitor != nil {
-						m.monitor = github.NewMonitor(m.app.GetConfig(), m.executor)
+						m.monitor = nil
 						m.logs = append(m.logs, "Updated monitor with new settings")
 					}
 
@@ -287,7 +352,7 @@ func (m *MonitorScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 					// Update the monitor with the new settings
 					if m.monitor != nil {
-						m.monitor = github.NewMonitor(m.app.GetConfig(), m.executor)
+						m.monitor = nil
 					}
 
 					m.running = true
@@ -319,7 +384,7 @@ func (m *MonitorScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 					// Update the monitor with the new setting
 					if m.monitor != nil {
-						m.monitor = github.NewMonitor(m.app.GetConfig(), m.executor)
+						m.monitor = nil
 					}
 
 					m.running = true

@@ -9,12 +9,25 @@ import (
 	"syscall"
 
 	"github.com/hellausefulsoftware/useful1/internal/cli"
+	"github.com/hellausefulsoftware/useful1/internal/common/vcs"
 	"github.com/hellausefulsoftware/useful1/internal/config"
 	"github.com/hellausefulsoftware/useful1/internal/github"
 	"github.com/hellausefulsoftware/useful1/internal/logging"
 	"github.com/hellausefulsoftware/useful1/internal/tui"
+	"github.com/hellausefulsoftware/useful1/internal/workflow"
 	"github.com/spf13/cobra"
 )
+
+// issueProcessorAdapter adapts a function to the IssueProcessor interface
+// This allows us to use our main flow processing logic with the VCS monitor
+type issueProcessorAdapter struct {
+	processFunc func(vcs.Issue) error
+}
+
+// Process calls the wrapped function
+func (a *issueProcessorAdapter) Process(issue vcs.Issue) error {
+	return a.processFunc(issue)
+}
 
 func main() {
 	// Initialize logger with default configuration
@@ -481,7 +494,143 @@ func runCLIExecutor(cmd *cobra.Command, screenType tui.ScreenType) {
 		logging.Info("Monitoring assigned issues only")
 
 		// Create monitor (no need to separately create GitHub client)
-		monitor := github.NewMonitor(cfg, executor)
+		// Create GitHub adapter for VCS service
+		githubAdapter, err := github.NewAdapter(cfg)
+		if err != nil {
+			logging.Error("Failed to create GitHub adapter", "error", err)
+			fmt.Println("{\"status\": \"error\", \"message\": \"Failed to create GitHub adapter\"}")
+			os.Exit(1)
+		}
+
+		// Create a processor adapter that delegates to our main flow processing
+		// Create a function to handle processing discovered issues in the main execution flow
+		processIssueFunc := func(issue vcs.Issue) error {
+				// Get authenticated username
+				username, _ := githubAdapter.GetAuthenticatedUser()
+
+				logging.Info("Processing issue in main execution flow",
+				"number", issue.GetNumber(),
+				"owner", issue.GetOwner(),
+				"repo", issue.GetRepo(),
+				"title", issue.GetTitle())
+
+			// Check if the issue is already closed
+			if strings.ToLower(issue.GetState()) == "closed" {
+				logging.Info("Issue is closed, skipping")
+				return nil
+			}
+
+			// Check if the last comment was from the bot
+			comments := issue.GetComments()
+			if len(comments) > 0 && comments[len(comments)-1].User == username {
+				logging.Info("Last comment was from bot, skipping to avoid duplicate responses")
+				return nil
+			}
+
+			// Check if we already have a PR for this issue
+			prs, err := githubAdapter.GetPullRequestsForIssue(issue.GetOwner(), issue.GetRepo(), issue.GetNumber())
+			if err != nil {
+				logging.Warn("Failed to check for existing draft PRs", "error", err)
+			} else {
+				// Check if any of these PRs are open drafts created by our user
+				for _, pr := range prs {
+					// Only consider open draft PRs
+					if pr.GetState() == "open" && pr.GetIsDraft() && pr.GetUser() == username {
+						logging.Info("Issue already has a draft PR, skipping")
+						return nil
+					}
+				}
+			}
+
+			// Create implementation workflow to handle the issue
+			implementationWorkflow := workflow.NewImplementationWorkflow(cfg)
+
+			// Generate branch name for the issue
+			branchName, prTitle, err := implementationWorkflow.GenerateBranchAndTitle(
+				issue.GetOwner(),
+				issue.GetRepo(),
+				issue.GetTitle(),
+				issue.GetBody(),
+			)
+			if err != nil {
+				return fmt.Errorf("failed to generate branch name: %w", err)
+			}
+
+			logging.Info("Generated branch name with workflow",
+				"branch", branchName,
+				"pr_title", prTitle)
+
+			// Get default branch
+			defaultBranch, err := githubAdapter.GetDefaultBranch(issue.GetOwner(), issue.GetRepo())
+			if err != nil {
+				logging.Warn("Failed to get default branch, using 'main'", "error", err)
+				defaultBranch = "main" // Default fallback
+			}
+
+			// Create the branch
+			logging.Info("Creating branch", "branch", branchName, "base", defaultBranch)
+			if err := githubAdapter.CreateBranch(issue.GetOwner(), issue.GetRepo(), branchName, defaultBranch); err != nil {
+				return fmt.Errorf("failed to create branch: %w", err)
+			}
+
+			// Create implementation plan
+			err = implementationWorkflow.CreateImplementationPlan(
+				issue.GetOwner(),
+				issue.GetRepo(),
+				branchName,
+				issue.GetNumber(),
+			)
+			if err != nil {
+				logging.Warn("Failed to create implementation plan", "error", err)
+				// Continue anyway - we'll still create the PR
+			}
+
+			// Get a PR body for the issue
+			prBody := fmt.Sprintf("This is an automatically generated draft PR for issue #%d.\n\n", issue.GetNumber())
+			prBody += fmt.Sprintf("## Issue\n[%s](%s)\n\n", issue.GetTitle(), issue.GetURL())
+			prBody += "## TODO\n- [ ] Implement solution\n- [ ] Add tests\n- [ ] Update documentation\n"
+
+			// Create the draft PR
+			logging.Info("Creating draft PR",
+				"title", prTitle,
+				"branch", branchName,
+				"base", defaultBranch)
+
+			pr, err := githubAdapter.CreateDraftPullRequest(
+				issue.GetOwner(),
+				issue.GetRepo(),
+				prTitle,
+				prBody,
+				branchName,
+				defaultBranch,
+			)
+			if err != nil {
+				return fmt.Errorf("failed to create draft PR: %w", err)
+			}
+
+			logging.Info("Successfully created draft PR",
+				"pr_number", pr.GetNumber(),
+				"url", pr.GetURL())
+
+			return nil
+		}
+
+		processor := &issueProcessorAdapter{
+			processFunc: processIssueFunc,
+		}
+		monitorConfig := vcs.MonitorConfig{
+			Config:    cfg,
+			Service:   githubAdapter,
+			Processor: processor,
+		}
+
+		// Create the new monitor
+		monitor, err := vcs.NewMonitor(monitorConfig)
+		if err != nil {
+			logging.Error("Failed to create monitor", "error", err)
+			fmt.Println("{\"status\": \"error\", \"message\": \"Failed to create monitor\"}")
+			os.Exit(1)
+		}
 
 		// Check if username was found
 		if monitor.GetUsername() == "" {

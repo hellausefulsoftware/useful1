@@ -1,3 +1,4 @@
+// Package anthropic provides integration with Anthropic's API for issue analysis
 package anthropic
 
 import (
@@ -15,9 +16,10 @@ import (
 
 // Constants for API
 const (
-	AnalysisModel   = "claude-3-7-sonnet-20250219"
-	SummaryModel    = "claude-3-7-sonnet-20250219" // Latest Sonnet model
-	ClassifierModel = "claude-3-5-haiku-20241022"  // Latest Haiku model
+	AnalysisModel   = "claude-3-7-sonnet-20250219" // For detailed analysis
+	SummaryModel    = "claude-3-7-sonnet-20250219" // For issue summarization
+	ClassifierModel = "claude-3-5-haiku-20241022"  // For classification tasks
+	CommitModel     = "claude-3-5-haiku-20241022"  // For commit messages
 )
 
 // Issue type classification
@@ -83,6 +85,24 @@ func NewAnalyzer(cfg *config.Config) *IssueAnalyzer {
 // SummarizeIssue takes an issue transcript and returns a concise summary
 func (a *IssueAnalyzer) SummarizeIssue(transcript string) (string, error) {
 	return a.summarizeIssue(transcript)
+}
+
+// GenerateImplementationPlan generates a detailed implementation plan for solving an issue
+func (a *IssueAnalyzer) GenerateImplementationPlan(issue *models.Issue) (string, error) {
+	// Create a complete transcript of the issue for analysis
+	transcript := formatIssueTranscript(issue)
+
+	// Use Claude 3.7 Sonnet to generate an implementation plan
+	return a.generateImplementationPlan(transcript, issue)
+}
+
+// GeneratePRDescription generates a comprehensive PR description for the created implementation
+func (a *IssueAnalyzer) GeneratePRDescription(issue *models.Issue, implementationPlan string, changedFiles []string) (string, error) {
+	// Create a complete transcript of the issue for analysis
+	transcript := formatIssueTranscript(issue)
+
+	// Use Claude 3.7 Sonnet to generate a detailed PR description
+	return a.generatePRDescription(transcript, issue, implementationPlan, changedFiles)
 }
 
 // AnalyzeIssue analyzes an issue using the Anthropic API and returns a branch name suggestion
@@ -390,6 +410,257 @@ Give only the branch name, e.g., "fix-header-overflow" or "add-user-permissions"
 	logging.Info("Generated branch name", "name", finalBranchName)
 
 	return finalBranchName, nil
+}
+
+// generateImplementationPlan creates a detailed implementation plan using Claude 3.7 Sonnet
+func (a *IssueAnalyzer) generateImplementationPlan(transcript string, issue *models.Issue) (string, error) {
+	prompt := `You are implementing a solution for a GitHub issue. I'll provide the details of the issue, and you need to create the solution.
+
+ISSUE TRANSCRIPT:
+${transcript}
+
+DO NOT just describe what you would do - I need you to ACTUALLY EXECUTE these commands right now:
+
+1. First, briefly understand what needs to be changed
+2. Create any necessary files or modify existing files
+3. Run: make lint-all
+4. Run: make test
+5. IMPORTANT: Execute these EXACT commands (replacing placeholders with actual values):
+   git add .
+   git commit -m "feat: implement solution for issue #${issue_number}"
+   git push origin HEAD
+
+You MUST execute the git commands - do not just suggest them or describe what they do. Actually run them now.`
+
+	prompt = strings.Replace(prompt, "${transcript}", transcript, 1)
+	prompt = strings.Replace(prompt, "${issue_number}", fmt.Sprintf("%d", issue.Number), 1)
+
+	logging.Debug("Sending implementation plan request to Anthropic API", "model", AnalysisModel)
+
+	logging.Debug("Anthropic API request details for implementation plan",
+		"model", AnalysisModel,
+		"max_tokens", 2000,
+		"prompt_length", len(prompt))
+
+	// Create a message using the SDK
+	message, err := a.client.Messages.New(context.Background(), anthropicAPI.MessageNewParams{
+		Model:     anthropicAPI.F(AnalysisModel),
+		MaxTokens: anthropicAPI.F(int64(2000)),
+		Messages: anthropicAPI.F([]anthropicAPI.MessageParam{
+			anthropicAPI.NewUserMessage(
+				anthropicAPI.NewTextBlock(prompt),
+			),
+		}),
+	})
+
+	if err != nil {
+		logging.Error("Anthropic API error",
+			"error", err.Error(),
+			"error_type", fmt.Sprintf("%T", err))
+		return "", fmt.Errorf("failed to generate implementation plan: %w", err)
+	}
+
+	// Extract response text from the message
+	if len(message.Content) == 0 {
+		logging.Warn("Empty response from Anthropic API")
+		return "", fmt.Errorf("empty response from API")
+	}
+
+	var responseText string
+	for _, content := range message.Content {
+		if content.Type == "text" {
+			responseText += content.Text
+		}
+	}
+
+	logging.Info("Successfully received implementation plan from Anthropic API",
+		"response_length", len(responseText),
+		"content_items", len(message.Content))
+
+	return responseText, nil
+}
+
+// generatePRDescription creates a detailed PR description using Claude 3.7 Sonnet
+func (a *IssueAnalyzer) generatePRDescription(transcript string, issue *models.Issue, implementationPlan string, changedFiles []string) (string, error) {
+	prompt := `You are a senior software engineer creating a detailed, professional pull request (PR) description for a GitHub issue.
+Based on the issue transcript and implementation plan, write a comprehensive PR description that clearly explains the changes.
+
+ISSUE TRANSCRIPT:
+${transcript}
+
+IMPLEMENTATION PLAN:
+${implementation_plan}
+
+CHANGED FILES:
+${changed_files}
+
+Create a detailed PR description that includes:
+
+1. Problem Summary:
+   - Clear statement of the problem addressed
+   - Expected vs. actual behavior before the fix
+   - Root cause analysis (if applicable)
+
+2. Solution Description:
+   - Detailed explanation of the approach taken
+   - Key changes made and their purpose
+   - Design decisions and trade-offs considered
+
+3. Testing:
+   - How the changes were tested
+   - Test cases that validate the solution
+   - Any edge cases that should be considered
+
+4. Additional Information:
+   - Potential impact on other systems
+   - Any migration steps required
+   - Documentation updates needed
+
+Format the PR description in Markdown with clear sections, bullet points, and code snippets where appropriate.
+Focus on providing a thorough explanation that would help other developers understand and review the changes effectively.`
+
+	// Replace placeholders
+	prompt = strings.Replace(prompt, "${transcript}", transcript, 1)
+	prompt = strings.Replace(prompt, "${implementation_plan}", implementationPlan, 1)
+	prompt = strings.Replace(prompt, "${changed_files}", strings.Join(changedFiles, "\n"), 1)
+
+	logging.Debug("Sending PR description request to Anthropic API", "model", AnalysisModel)
+
+	logging.Debug("Anthropic API request details for PR description",
+		"model", AnalysisModel,
+		"max_tokens", 2000,
+		"prompt_length", len(prompt))
+
+	// Create a message using the SDK
+	message, err := a.client.Messages.New(context.Background(), anthropicAPI.MessageNewParams{
+		Model:     anthropicAPI.F(AnalysisModel),
+		MaxTokens: anthropicAPI.F(int64(2000)),
+		Messages: anthropicAPI.F([]anthropicAPI.MessageParam{
+			anthropicAPI.NewUserMessage(
+				anthropicAPI.NewTextBlock(prompt),
+			),
+		}),
+	})
+
+	if err != nil {
+		logging.Error("Anthropic API error",
+			"error", err.Error(),
+			"error_type", fmt.Sprintf("%T", err))
+		return "", fmt.Errorf("failed to generate PR description: %w", err)
+	}
+
+	// Extract response text from the message
+	if len(message.Content) == 0 {
+		logging.Warn("Empty response from Anthropic API")
+		return "", fmt.Errorf("empty response from API")
+	}
+
+	var responseText string
+	for _, content := range message.Content {
+		if content.Type == "text" {
+			responseText += content.Text
+		}
+	}
+
+	logging.Info("Successfully received PR description from Anthropic API",
+		"response_length", len(responseText),
+		"content_items", len(message.Content))
+
+	// Add footer to the description
+	responseText += "\n\n---\n*This PR description was generated with Claude 3.7 Sonnet*"
+
+	return responseText, nil
+}
+
+// GenerateCommitMessage creates a concise, descriptive commit message using Claude 3.5 Haiku
+func (a *IssueAnalyzer) GenerateCommitMessage(issue *models.Issue, changedFiles []string, changeSummary string) (string, error) {
+	// Create a prompt for the commit message
+	prompt := `You are a software developer creating a concise and meaningful git commit message.
+Based on the issue description and the changed files, write a clear, specific commit message.
+
+ISSUE: #${issue_number} - ${issue_title}
+${issue_description}
+
+CHANGED FILES:
+${changed_files}
+
+CHANGES SUMMARY:
+${change_summary}
+
+Create a descriptive commit message that follows these guidelines:
+1. Start with a verb in present tense (e.g., "Add", "Fix", "Update", "Refactor", "Implement")
+2. Be specific about what changed and why
+3. Keep it under 80 characters for the first line
+4. Include the issue number in the message with the format "Fix #123" or "Implement #123" depending on issue type
+5. Follow conventional commit format if appropriate (feat:, fix:, docs:, refactor:, etc.)
+
+Respond with ONLY the commit message, nothing else.`
+
+	// Replace placeholders
+	prompt = strings.Replace(prompt, "${issue_number}", fmt.Sprintf("%d", issue.Number), 1)
+	prompt = strings.Replace(prompt, "${issue_title}", issue.Title, 1)
+	prompt = strings.Replace(prompt, "${issue_description}", issue.Body, 1)
+	prompt = strings.Replace(prompt, "${changed_files}", strings.Join(changedFiles, "\n"), 1)
+	prompt = strings.Replace(prompt, "${change_summary}", changeSummary, 1)
+
+	logging.Debug("Sending commit message request to Anthropic API", "model", CommitModel)
+
+	logging.Debug("Anthropic API request details for commit message",
+		"model", CommitModel,
+		"max_tokens", 150,
+		"prompt_length", len(prompt))
+
+	// Create a message using the SDK
+	message, err := a.client.Messages.New(context.Background(), anthropicAPI.MessageNewParams{
+		Model:     anthropicAPI.F(CommitModel),
+		MaxTokens: anthropicAPI.F(int64(150)),
+		Messages: anthropicAPI.F([]anthropicAPI.MessageParam{
+			anthropicAPI.NewUserMessage(
+				anthropicAPI.NewTextBlock(prompt),
+			),
+		}),
+	})
+
+	if err != nil {
+		logging.Error("Anthropic API error",
+			"error", err.Error(),
+			"error_type", fmt.Sprintf("%T", err))
+		return fmt.Sprintf("Add implementation for issue #%d", issue.Number), fmt.Errorf("failed to generate commit message: %w", err)
+	}
+
+	// Extract response text from the message
+	if len(message.Content) == 0 {
+		logging.Warn("Empty response from Anthropic API")
+		return fmt.Sprintf("Add implementation for issue #%d", issue.Number), fmt.Errorf("empty response from API")
+	}
+
+	var commitMessage string
+	for _, content := range message.Content {
+		if content.Type == "text" {
+			commitMessage += content.Text
+		}
+	}
+
+	// Trim and clean up the commit message
+	commitMessage = strings.TrimSpace(commitMessage)
+
+	// Check if the message is overly long and split it if needed
+	lines := strings.Split(commitMessage, "\n")
+	if len(lines) > 0 && len(lines[0]) > 80 {
+		// Truncate to 80 chars if way too long
+		if len(lines[0]) > 120 {
+			lines[0] = lines[0][:77] + "..."
+		}
+	}
+
+	// Reconstruct the message
+	commitMessage = strings.Join(lines, "\n")
+
+	logging.Info("Successfully generated commit message",
+		"message", commitMessage,
+		"length", len(commitMessage))
+
+	return commitMessage, nil
 }
 
 // defaultBranchName generates a simple branch name as a fallback

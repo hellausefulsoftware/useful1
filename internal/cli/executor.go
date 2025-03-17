@@ -13,26 +13,36 @@ import (
 	"time"
 
 	"github.com/hellausefulsoftware/useful1/internal/config"
-	"github.com/hellausefulsoftware/useful1/internal/github"
 	"github.com/hellausefulsoftware/useful1/internal/logging"
 )
+
+// GithubClient defines the interface for GitHub operations used by Executor
+// Only includes the minimal methods needed by executor.go
+type GithubClient interface {
+	RespondToIssue(owner, repo string, issueNumber int, comment string) error
+}
 
 // Executor handles execution of CLI commands and interaction with prompts
 type Executor struct {
 	config *config.Config
-	github *github.Client
+	github GithubClient
 }
 
 // NewExecutor creates a new command executor
 func NewExecutor(cfg *config.Config) *Executor {
 	return &Executor{
 		config: cfg,
-		github: github.NewClient(cfg.GitHub.Token),
+		github: nil, // Will be set by SetGithubClient
 	}
 }
 
+// SetGithubClient sets the GitHub client
+func (e *Executor) SetGithubClient(client GithubClient) {
+	e.github = client
+}
+
 // GetGitHubClient returns the GitHub client
-func (e *Executor) GetGitHubClient() *github.Client {
+func (e *Executor) GetGitHubClient() GithubClient {
 	return e.github
 }
 
@@ -83,28 +93,28 @@ func (e *Executor) RespondToIssue(issueNumber string, templateName string) error
 		return err
 	}
 
-	// Parse the issue URL to get owner and repo
-	owner := "default-owner" // This would typically be parsed from a URL or config
-	repo := "default-repo"   // This would typically be parsed from a URL or config
+	/*
+		// Parse the issue URL to get owner and repo
+		owner := "default-owner" // This would typically be parsed from a URL or config
+		repo := "default-repo"   // This would typically be parsed from a URL or config
 
-	// Post a comment to the issue with the result
-	err = e.github.RespondToIssue(
-		owner,
-		repo,
-		issueNum,
-		fmt.Sprintf("Automated response:\n\n```\n%s\n```", output),
-	)
+		// Post a comment to the issue with the result
+		err = e.github.RespondToIssue(
+			owner,
+			repo,
+			issueNum,
+			fmt.Sprintf("Automated response:\n\n```\n%s\n```", output),
+		)
 
-	if err != nil {
-		return err
-	}
+		if err != nil {
+			return err
+		}
+	*/
 
 	// Output JSON response
 	response := map[string]interface{}{
 		"status":          "success",
 		"issue_number":    issueNum,
-		"owner":           owner,
-		"repo":            repo,
 		"template":        templateName,
 		"response_length": len(output),
 	}
@@ -120,13 +130,17 @@ func (e *Executor) RespondToIssue(issueNumber string, templateName string) error
 
 // RespondToIssueText processes issue text and responds using the CLI tool
 func (e *Executor) RespondToIssueText(owner, repo string, issueNumber int, issueText string) error {
+	logging.Debug("===== STARTING RespondToIssueText =====")
+	logging.Debug("GitHub Token present:", "token_exists", e.config.GitHub.Token != "", "token_length", len(e.config.GitHub.Token))
 	logging.Info("Generating response for issue", "issue", issueNumber, "owner", owner, "repo", repo)
 
+	logging.Debug("Creating temporary file for issue text")
 	// Create a temporary file with the issue text
 	tmpFile, err := os.CreateTemp("", "issue-*.txt")
 	if err != nil {
 		return fmt.Errorf("failed to create temporary file: %w", err)
 	}
+	logging.Debug("Created temporary file", "path", tmpFile.Name())
 	defer func() {
 		if removeErr := os.Remove(tmpFile.Name()); removeErr != nil {
 			logging.Warn("Failed to remove temporary file", "file", tmpFile.Name(), "error", removeErr)
@@ -190,22 +204,62 @@ func (e *Executor) RespondToIssueText(owner, repo string, issueNumber int, issue
 	// Add metadata flag
 	args = append(args, "--metadata", metadataFile.Name())
 
-	// Execute the CLI tool
-	output, err := e.executeWithPrompts(e.config.CLI.Command, args)
-	if err != nil {
-		return fmt.Errorf("CLI execution error: %w", err)
+	logging.Debug("Executing CLI tool", "command", e.config.CLI.Command, "args", args)
+
+	// Check if the CLI tool exists
+	cmdParts := strings.Fields(e.config.CLI.Command)
+	if len(cmdParts) > 0 {
+		_, err := exec.LookPath(cmdParts[0])
+		if err != nil {
+			logging.Error("CLI tool not found in PATH", "command", cmdParts[0], "error", err)
+			return fmt.Errorf("CLI tool not found in PATH: %s: %w", cmdParts[0], err)
+		} else {
+			logging.Debug("CLI tool found in PATH", "command", cmdParts[0])
+		}
 	}
 
+	// Execute the CLI tool with a timeout
+	outputChan := make(chan string, 1)
+	errChan := make(chan error, 1)
+
+	go func() {
+		output, err := e.executeWithPrompts(e.config.CLI.Command, args)
+		if err != nil {
+			errChan <- err
+			return
+		}
+		outputChan <- output
+	}()
+
+	// Wait for execution with a timeout
+	var output string
+	select {
+	case output = <-outputChan:
+		logging.Debug("CLI execution completed", "output_length", len(output))
+	case err := <-errChan:
+		logging.Error("CLI execution error", "error", err)
+		return fmt.Errorf("CLI execution error: %w", err)
+	case <-time.After(60 * time.Second):
+		logging.Error("CLI execution timed out after 60 seconds")
+		return fmt.Errorf("CLI execution timed out after 60 seconds")
+	}
+
+	logging.Debug("Extracting response from output")
 	// Extract response from output
 	response, err := e.extractResponse(output)
 	if err != nil {
+		logging.Error("Failed to extract response", "error", err)
 		return fmt.Errorf("failed to extract response: %w", err)
 	}
+	logging.Debug("Response extracted successfully", "response_length", len(response))
 
+	logging.Debug("Posting response to issue", "owner", owner, "repo", repo, "issue", issueNumber)
 	// Post response to the issue
 	if postErr := e.github.RespondToIssue(owner, repo, issueNumber, response); postErr != nil {
+		logging.Error("Failed to post response", "error", postErr)
 		return fmt.Errorf("failed to post response: %w", postErr)
 	}
+	logging.Debug("Response posted successfully")
 
 	// Output JSON response
 	responseObj := map[string]interface{}{
@@ -359,9 +413,22 @@ func (e *Executor) RunTests(testSuite string) error {
 
 // executeWithPrompts runs a command and handles interactive prompts
 func (e *Executor) executeWithPrompts(cmd string, args []string) (string, error) {
+	logging.Debug("executeWithPrompts called", "command", cmd, "args", args)
 	// Parse the command string to handle commands with arguments
 	// This allows for "claude --dangerously-skip-permissions" to be processed correctly
 	cmdParts := strings.Fields(cmd)
+	logging.Debug("Command parts", "parts", cmdParts)
+
+	// Verify the command exists
+	if len(cmdParts) > 0 {
+		path, err := exec.LookPath(cmdParts[0])
+		if err != nil {
+			logging.Error("Command not found in PATH", "command", cmdParts[0], "error", err)
+		} else {
+			logging.Debug("Command found at path", "command", cmdParts[0], "path", path)
+		}
+	}
+
 	var command *exec.Cmd
 
 	if len(cmdParts) > 1 {

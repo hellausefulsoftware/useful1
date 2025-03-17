@@ -38,11 +38,15 @@ type Config struct {
 		PollInterval       int      // in minutes
 		RepoFilter         []string // optional list of repositories to filter on (empty means all)
 		AssignedIssuesOnly bool     // whether to only show issues assigned to the user
+		AutoRespond        bool     // whether to automatically respond to issues
 	}
 	Logging struct {
 		Output     io.Writer
 		Level      string
 		JSONFormat bool
+	}
+	VCS struct {
+		Platform string // "github", "gitlab", "gogs", etc.
 	}
 }
 
@@ -55,35 +59,22 @@ func LoadConfig() (*Config, error) {
 	cfg.Monitor.PollInterval = 5 // 5 minutes
 	cfg.Budgets.Default = 0.25   // Default budget
 	cfg.Logging.Level = "info"   // Default log level
+	cfg.VCS.Platform = "github"  // Default VCS platform
 
-	// Try to find config file in standard locations
-	configFile := os.Getenv("USEFUL1_CONFIG")
-	if configFile == "" {
-		// Check standard locations
-		homeDir, err := os.UserHomeDir()
-		if err == nil {
-			// Try ~/.config/useful1/config.json
-			configFile = filepath.Join(homeDir, ".config", "useful1", "config.json")
-			if _, err := os.Stat(configFile); os.IsNotExist(err) {
-				// Try ~/.useful1.json
-				configFile = filepath.Join(homeDir, ".useful1.json")
-			}
-		}
-	}
+	// Get config file path using GetConfigPath
+	configFile := GetConfigPath()
 
 	// If config file exists, load it
-	if configFile != "" {
-		if _, err := os.Stat(configFile); err == nil {
-			file, err := os.Open(configFile)
-			if err != nil {
-				return nil, fmt.Errorf("failed to open config file: %w", err)
-			}
-			defer file.Close()
+	if _, err := os.Stat(configFile); err == nil {
+		file, err := os.Open(configFile)
+		if err != nil {
+			return nil, fmt.Errorf("failed to open config file: %w", err)
+		}
+		defer file.Close()
 
-			decoder := json.NewDecoder(file)
-			if err := decoder.Decode(cfg); err != nil {
-				return nil, fmt.Errorf("failed to decode config file: %w", err)
-			}
+		decoder := json.NewDecoder(file)
+		if err := decoder.Decode(cfg); err != nil {
+			return nil, fmt.Errorf("failed to decode config file: %w", err)
 		}
 	}
 

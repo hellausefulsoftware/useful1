@@ -43,19 +43,34 @@ useful1/
 │   └── useful1/
 │       └── main.go         # Entry point and command-line interface
 ├── internal/
+│   ├── anthropic/
+│   │   └── analysis.go     # Integration with Anthropic's API
 │   ├── auth/
 │   │   └── auth.go         # Authentication for GitHub and Anthropic
 │   ├── budget/
 │   │   └── budget.go       # Budget management for API usage
 │   ├── cli/
 │   │   └── executor.go     # Executes the wrapped CLI tool
+│   ├── common/
+│   │   └── vcs/            # VCS abstractions and interfaces
+│   │       ├── issue.go
+│   │       ├── monitor.go
+│   │       └── service.go
 │   ├── config/
 │   │   └── config.go       # Configuration management
 │   ├── github/
 │   │   ├── client.go       # GitHub API client
-│   │   └── monitor.go      # Issue monitoring system
-│   └── monitoring/
-│       └── setup.go        # Monitoring configuration
+│   │   ├── provider.go     # GitHub service provider
+│   │   └── github_adapter.go # GitHub implementation of VCS interfaces
+│   ├── models/
+│   │   └── models.go       # Common data models
+│   ├── tui/
+│   │   └── app.go          # Terminal user interface
+│   └── workflow/
+│       ├── workflow.go     # Implementation workflow orchestration
+│       └── services/       # Implementation workflow services
+│           ├── github.go
+│           └── provider.go
 ├── Dockerfile              # Container definition
 ├── docker-compose.yml      # Container orchestration
 ├── go.mod                  # Go module definition
@@ -77,25 +92,42 @@ The main entry point that provides these commands:
 
 Handles loading, saving, and validating application settings, stored in `~/.useful1/config.json` with credentials securely base64 encoded.
 
-#### 3. GitHub Client (internal/github/client.go)
+#### 3. VCS Abstractions (internal/common/vcs)
 
-Provides a clean interface to the GitHub API for repository operations, branch creation, and PR submission.
+Provides platform-agnostic interfaces and abstractions for version control systems:
+- Monitoring and issue discovery
+- Repository operations
+- Platform-agnostic data models
 
-#### 4. Issue Monitor (internal/github/monitor.go)
+#### 4. GitHub Implementation (internal/github)
 
-The heart of the system, continuously checking for issues assigned to the bot and initiating the resolution workflow.
+Implements the VCS interfaces for GitHub:
+- `github_adapter.go`: Implements the VCS service interface
+- `client.go`: Low-level GitHub API operations
+- `provider.go`: Creates GitHub service instances
 
-#### 5. CLI Executor (internal/cli/executor.go)
+#### 5. Workflow Orchestration (internal/workflow)
 
-Bridges GitHub and your CLI tool, handling execution, code generation, and repository interactions.
+Handles the implementation process for issues:
+- `workflow.go`: Orchestrates the complete implementation workflow
+- `services/github.go`: Implements GitHub-specific workflow services
+- Responsible for generating branch names, implementation plans, and executing fixes
 
-#### 6. Authentication (internal/auth/auth.go)
+#### 6. CLI Executor (internal/cli/executor.go)
+
+Bridges the workflow and Claude CLI tool, handling execution and code generation.
+
+#### 7. Authentication (internal/auth/auth.go)
 
 Manages GitHub and Anthropic authentication through interactive setup.
 
-#### 7. Budget Management (internal/budget/budget.go)
+#### 8. Budget Management (internal/budget/budget.go)
 
 Controls API usage costs by setting and enforcing budget limits.
+
+#### 9. Anthropic Integration (internal/anthropic)
+
+Handles communication with Anthropic's API for generating implementation plans.
 
 ## Installation
 
@@ -285,9 +317,24 @@ Error responses follow a consistent format:
 
 ### Issue Resolution Workflow
 
+The system follows a functional chain pattern with clear separation of concerns:
+
+#### VCS Monitoring
 1. The monitor identifies issues assigned to the bot
 2. For each assigned issue, it:
    - Retrieves the full issue details including all comments
+   - Returns these issues to the main execution flow
+   - Does NOT directly initiate workflow processing
+
+#### Main Execution Flow
+1. Receives discovered issues from the VCS monitor
+2. For each issue:
+   - Applies filtering and validation logic
+   - Determines if implementation is required
+   - Invokes the workflow orchestrator with validated issues
+
+#### Implementation Workflow
+1. The workflow orchestrator processes each issue it receives:
    - Analyzes the context to understand the required fix
    - Determines the appropriate branch type (bugfix, chore, feature)
    - Creates a new branch from the repository's default branch
@@ -296,6 +343,8 @@ Error responses follow a consistent format:
    - Creates a pull request targeting the default branch
    - Tags the original assignor for review
    - Comments on the issue with a link to the PR
+
+This functional chain ensures each component has a single responsibility and can be tested independently. VCS operations are kept separate from business logic implementation, allowing for clean extension and testing.
 
 ### Branch Naming Convention
 
