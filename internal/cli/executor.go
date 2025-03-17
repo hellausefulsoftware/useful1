@@ -1,211 +1,306 @@
 package cli
 
 import (
-	"bufio"
+	"context"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
+	"regexp"
 	"strings"
 	"syscall"
+	"time"
 
+	expect "github.com/google/goexpect"
 	"github.com/hellausefulsoftware/useful1/internal/config"
 	"github.com/hellausefulsoftware/useful1/internal/logging"
 )
 
-// Executor handles execution of CLI commands and interaction with prompts
+// Executor handles execution of CLI commands and interaction with prompts.
 type Executor struct {
 	config *config.Config
 }
 
-// NewExecutor creates a new command executor
+// NewExecutor creates a new command executor.
 func NewExecutor(cfg *config.Config) *Executor {
 	return &Executor{
 		config: cfg,
 	}
 }
 
-// ExecuteWithPromptsInternal executes a command and captures its output, handling prompts
-func (e *Executor) ExecuteWithPromptsInternal(command string, args []string) (string, error) {
-	logging.Debug("executeWithPrompts called", "command", command, "args", args)
-	// Parse the command string to handle commands with arguments
-	// This allows for "claude --dangerously-skip-permissions" to be processed correctly
-	cmdParts := strings.Fields(command)
-	logging.Debug("Command parts", "parts", cmdParts)
-
-	// Verify the command exists
-	if len(cmdParts) > 0 {
-		path, err := exec.LookPath(cmdParts[0])
-		if err != nil {
-			logging.Error("Command not found in PATH", "command", cmdParts[0], "error", err)
-		} else {
-			logging.Debug("Command found at path", "command", cmdParts[0], "path", path)
-		}
-	}
-
-	var cmd *exec.Cmd
-
-	if len(cmdParts) > 1 {
-		// Command has built-in arguments
-		cmd = exec.Command(cmdParts[0], append(cmdParts[1:], args...)...)
-	} else {
-		// Command is a single word
-		cmd = exec.Command(command, args...)
-	}
-
-	// Create pipes for stdin, stdout, stderr
-	stdin, err := cmd.StdinPipe()
-	if err != nil {
-		return "", fmt.Errorf("failed to create stdin pipe: %w", err)
-	}
-
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return "", fmt.Errorf("failed to create stdout pipe: %w", err)
-	}
-
-	stderr, err := cmd.StderrPipe()
-	if err != nil {
-		return "", fmt.Errorf("failed to create stderr pipe: %w", err)
-	}
-
-	// Start the command
-	if err := cmd.Start(); err != nil {
-		return "", fmt.Errorf("failed to start command: %w", err)
-	}
-
-	// Collect all output in a buffer
-	outputBuffer := &strings.Builder{}
-
-	// Create a merged reader for stdout and stderr
-	readers := []io.Reader{stdout, stderr}
-	multiReader := io.MultiReader(readers...)
-	scanner := bufio.NewScanner(multiReader)
-
-	// Process output and handle prompts
-	go func() {
-		for scanner.Scan() {
-			line := scanner.Text()
-			fmt.Println(line) // Echo to our stdout
-			outputBuffer.WriteString(line + "\n")
-
-			// Check for prompt patterns
-			for _, pattern := range e.config.Prompt.ConfirmationPatterns {
-				if strings.Contains(line, pattern.Pattern) {
-					// Check if criteria are met
-					// Check if criteria are met
-					shouldConfirm := true // Default to confirming if no criteria
-					if len(pattern.Criteria) > 0 {
-						shouldConfirm = false
-						for _, criterion := range pattern.Criteria {
-							if strings.Contains(outputBuffer.String(), criterion) {
-								shouldConfirm = true
-								break
-							}
-						}
-					}
-
-					if shouldConfirm {
-						// Send confirmation
-						if _, err := fmt.Fprintln(stdin, pattern.Response); err != nil {
-							logging.Warn("Failed to send confirmation response", "error", err)
-						}
-					} else {
-						// Send rejection or cancel
-						if _, err := fmt.Fprintln(stdin, "n"); err != nil {
-							logging.Warn("Failed to send rejection response", "error", err)
-						}
-					}
-				}
-			}
-		}
-	}()
-
-	// Wait for command to complete
-	if err := cmd.Wait(); err != nil {
-		return outputBuffer.String(), fmt.Errorf("command failed: %w", err)
-	}
-
-	return outputBuffer.String(), nil
-}
-
-// Execute runs the configured CLI tool directly with interactive input/output
+// Execute runs the command in interactive mode, handling the CLI directly.
 func (e *Executor) Execute(args []string) error {
-	logging.Info("Executing CLI tool", "command", e.config.CLI.Command, "args", args)
+	logging.Info("Executing CLI tool", "command", e.config.CLI.Command, "args", args, "timeout", e.config.CLI.Timeout)
 
-	// Parse the command string to handle commands with arguments
+	// Create a context with timeout.
+	timeout := e.config.CLI.Timeout
+	if timeout <= 0 {
+		timeout = 120 // Default 120 seconds if not set or invalid.
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeout)*time.Second)
+	defer cancel()
+
+	// Parse command and build exec.Command.
 	cmdParts := strings.Fields(e.config.CLI.Command)
 	var command *exec.Cmd
-
 	if len(cmdParts) > 1 {
-		// Command has built-in arguments
-		command = exec.Command(cmdParts[0], append(cmdParts[1:], args...)...)
+		command = exec.CommandContext(ctx, cmdParts[0], append(cmdParts[1:], args...)...)
 	} else {
-		// Command is a single word
-		command = exec.Command(e.config.CLI.Command, args...)
+		command = exec.CommandContext(ctx, e.config.CLI.Command, args...)
 	}
 
-	// Connect command's stdin, stdout, and stderr directly to the user's
+	// Connect standard IO.
 	command.Stdin = os.Stdin
 	command.Stdout = os.Stdout
 	command.Stderr = os.Stderr
 
-	// Set process group to allow proper terminal handling
+	// Set process group for terminal handling.
 	command.SysProcAttr = &syscall.SysProcAttr{
 		Setpgid: true,
 	}
 
-	// Run the command in interactive mode
-	logging.Info("Starting interactive command",
-		"command", e.config.CLI.Command,
-		"args", args)
-
-	err := command.Run()
-	if err != nil {
+	logging.Info("Starting interactive command", "command", e.config.CLI.Command, "args", args, "timeout", timeout)
+	if err := command.Run(); err != nil {
+		if ctx.Err() != nil {
+			logging.Error("Command execution timed out", "timeout", timeout)
+			return fmt.Errorf("command execution timed out after %d seconds", timeout)
+		}
 		logging.Error("Command execution failed", "error", err)
 		return fmt.Errorf("command execution failed: %w", err)
 	}
-
 	logging.Info("Command completed successfully")
 	return nil
 }
 
-// ExecuteWithOutput runs the CLI tool and returns the output for display in TUI
-func (e *Executor) ExecuteWithOutput(args []string) (string, error) {
-	return e.ExecuteWithPromptsInternal(e.config.CLI.Command, args)
-}
+// ExecuteWithOutput runs the CLI tool and returns output, handling prompts with expect.
+// The function first processes output until both the prompt content and a confirmation (enter)
+// have been sent. It then enters a monitoring phase that polls every 100ms for the text
+// "esc to interrupt". If 5 seconds pass without a new detection, the monitoring phase ends.
+func (e *Executor) ExecuteWithOutput(args []string, promptContent string) (string, error) {
+	logging.Info("Executing CLI tool with output capture", "command", e.config.CLI.Command, "args", args, "prompt_provided", promptContent != "")
 
-// ExecuteBasic runs the CLI tool and returns the output for display in TUI
-func (e *Executor) ExecuteBasic(args []string) (string, error) {
-	logging.Info("Executing CLI tool with output capture", "command", e.config.CLI.Command, "args", args)
-
-	// Parse the command string to handle commands with arguments
+	// Build command arguments.
 	cmdParts := strings.Fields(e.config.CLI.Command)
-	var command *exec.Cmd
-
+	var cmdArgs []string
 	if len(cmdParts) > 1 {
-		// Command has built-in arguments
-		command = exec.Command(cmdParts[0], append(cmdParts[1:], args...)...)
+		cmdArgs = append(cmdParts[1:], args...)
 	} else {
-		// Command is a single word
-		command = exec.Command(e.config.CLI.Command, args...)
+		cmdArgs = args
 	}
 
-	// Capture both stdout and stderr in the output
-	stdout, err := command.Output()
+	// Set timeout.
+	timeout := e.config.CLI.Timeout
+	if timeout <= 0 {
+		timeout = 120 // Default 120 seconds.
+	}
+	timeoutDuration := time.Duration(timeout) * time.Second
+
+	logging.Info("Using expect to handle interactive prompts", "command", cmdParts[0], "args", cmdArgs, "timeout", timeoutDuration)
+
+	// Spawn command with expect.
+	cmd := exec.Command(cmdParts[0], cmdArgs...)
+	exp, _, err := expect.SpawnWithArgs(cmd.Args,
+		timeoutDuration,
+		expect.Verbose(true),
+		expect.VerboseWriter(os.Stdout),
+		expect.PartialMatch(true),
+		expect.CheckDuration(100*time.Millisecond))
 	if err != nil {
-		// Try to get stderr output
-		var errorOutput string
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			errorOutput = string(exitErr.Stderr)
+		logging.Error("Failed to spawn command", "error", err)
+		return "", fmt.Errorf("failed to spawn command: %w", err)
+	}
+	defer func() {
+		if err := exp.Close(); err != nil {
+			logging.Error("Failed to close expect", "error", err)
+		}
+	}()
+
+	// Flags to track if we've sent the prompt and the enter key.
+	promptSent := false
+	enterSent := false
+
+	// Output buffer.
+	var output strings.Builder
+
+	// Regex patterns.
+	cursorPattern := regexp.MustCompile(`>`)
+	humanPattern := regexp.MustCompile(`Human:`)
+	promptPattern := regexp.MustCompile(`Prompt:`)
+	ynPattern := regexp.MustCompile(`\[y/n\]|\(y/N\)|y/n`)
+	welcomePattern := regexp.MustCompile(`Welcome to Claude Code`)
+	boxPattern := regexp.MustCompile(`╭|╮|╯|╰`)
+	tryPattern := regexp.MustCompile(`Try "how do I`)
+	claudePromptPattern := regexp.MustCompile(`>|Human:|Press Ctrl-C`)
+	inputBoxPattern := regexp.MustCompile(`\[Pasted text`)
+
+	emptyOutputCount := 0
+
+	// Normal output processing loop.
+	for {
+		// Exit this loop once both prompt and enter have been sent.
+		if promptSent && enterSent {
+			break
 		}
 
-		// Return both the error and any stderr content
-		if errorOutput != "" {
-			return fmt.Sprintf("ERROR: %s\n\nCommand stderr output:\n%s", err.Error(), errorOutput), err
+		result, _, err := exp.Expect(regexp.MustCompile(`.+`), 5*time.Second)
+		if result == "" {
+			emptyOutputCount++
+			logging.Info("Received empty output", "empty_count", emptyOutputCount)
+			// If multiple empty outputs and prompt not yet sent, send it.
+			if emptyOutputCount > 5 && !promptSent && promptContent != "" {
+				logging.Info("Multiple empty outputs detected, sending prompt content")
+				promptSent = true
+				if err := exp.Send(promptContent + "\n"); err != nil {
+					logging.Error("Failed to send prompt content", "error", err)
+					return output.String(), err
+				}
+			} else if emptyOutputCount > 10 {
+				logging.Info("Assuming process is running despite empty outputs")
+				promptSent = true
+				if err := exp.Send("\r"); err != nil {
+					logging.Error("Failed to send newline", "error", err)
+				}
+				return "Command appears to be running but not producing detectable output", nil
+			}
+			continue
 		}
-		return fmt.Sprintf("ERROR: %s", err.Error()), err
+		emptyOutputCount = 0
+
+		// Handle EOF.
+		if err != nil {
+			if err == io.EOF {
+				logging.Info("Command completed with EOF")
+				output.WriteString(result)
+				break
+			}
+			output.WriteString(result)
+			if err.Error() == "expect: timeout" {
+				logging.Info("Expect timed out waiting for more output", "timeout_seconds", 5)
+				if emptyOutputCount > 3 && !promptSent && promptContent != "" {
+					logging.Info("Timeout with multiple empty outputs, sending prompt content")
+					promptSent = true
+					if err := exp.Send(promptContent + "\n"); err != nil {
+						logging.Error("Failed to send prompt content", "error", err)
+						return output.String(), err
+					}
+				}
+				continue
+			}
+			logging.Error("Error waiting for command output", "error", err)
+			return output.String(), err
+		}
+
+		// Process output based on recognized patterns.
+		switch {
+		// Handle input box prompt.
+		case inputBoxPattern.MatchString(result):
+			if !promptSent && promptContent != "" {
+				logging.Info("Detected pasted text box, sending prompt content")
+				if err := exp.Send(promptContent + "\n"); err != nil {
+					logging.Error("Failed to send prompt content", "error", err)
+					return output.String(), err
+				}
+				promptSent = true
+			} else {
+				logging.Info("Input box prompt detected again; sending newline")
+				if err := exp.Send("\r"); err != nil {
+					logging.Error("Failed to send newline", "error", err)
+				}
+				time.Sleep(2 * time.Second)
+				enterSent = true
+			}
+		// Handle yes/no prompt.
+		case ynPattern.MatchString(result):
+			logging.Info("Detected yes/no prompt, answering yes")
+			if err := exp.Send("y\n"); err != nil {
+				logging.Error("Failed to send yes response", "error", err)
+				return output.String(), err
+			}
+		// Handle interactive screen prompts.
+		case welcomePattern.MatchString(result) ||
+			boxPattern.MatchString(result) ||
+			tryPattern.MatchString(result) ||
+			claudePromptPattern.MatchString(result):
+			if !promptSent && promptContent != "" {
+				logging.Info("Detected interactive screen, sending prompt content")
+				promptSent = true
+				if err := exp.Send(promptContent + "\n"); err != nil {
+					logging.Error("Failed to send prompt content", "error", err)
+					return output.String(), err
+				}
+				time.Sleep(500 * time.Millisecond)
+				if err := exp.Send("\r"); err != nil {
+					logging.Error("Failed to send confirmation newline", "error", err)
+				}
+				time.Sleep(2 * time.Second)
+				enterSent = true
+			} else {
+				logging.Info("Interactive prompt detected again; sending newline")
+				if err := exp.Send("\r"); err != nil {
+					logging.Error("Failed to send newline", "error", err)
+					return output.String(), err
+				}
+				time.Sleep(2 * time.Second)
+				enterSent = true
+			}
+		// Handle cursor, human, or prompt patterns.
+		case cursorPattern.MatchString(result) ||
+			humanPattern.MatchString(result) ||
+			promptPattern.MatchString(result):
+			time.Sleep(500 * time.Millisecond)
+			if err := exp.Send("\r"); err != nil {
+				logging.Error("Failed to send confirmation newline", "error", err)
+			}
+			if !promptSent && promptContent != "" {
+				logging.Info("Detected prompt, sending prompt content")
+				promptSent = true
+				if err := exp.Send(promptContent + "\n"); err != nil {
+					logging.Error("Failed to send prompt content", "error", err)
+					return output.String(), err
+				}
+			} else {
+				logging.Info("Prompt detected again; sending newline")
+				if err := exp.Send("\r"); err != nil {
+					logging.Error("Failed to send newline", "error", err)
+					return output.String(), err
+				}
+				time.Sleep(2 * time.Second)
+				enterSent = true
+			}
+		}
+
+		output.WriteString(result)
 	}
 
-	return string(stdout), nil
+	// Monitoring phase:
+	logging.Info("Both prompt and enter sent; entering monitoring phase")
+	lastDetection := time.Now()
+	// Poll for "esc to interrupt" every 100ms.
+	for {
+		result, _, err := exp.Expect(regexp.MustCompile(`esc to interrupt`), 100*time.Millisecond)
+		// If we detect the string, update lastDetection and log it.
+		if err == nil && result != "" {
+			lastDetection = time.Now()
+			output.WriteString(result)
+			logging.Info("'esc to interrupt' detected; updating last detection time")
+		}
+		// If 5 seconds have passed with no new detection, exit monitoring.
+		if time.Since(lastDetection) >= 5*time.Second {
+			logging.Info("No new 'esc to interrupt' detected in the last 5 seconds; exiting monitoring phase")
+			break
+		}
+	}
+
+	// After monitoring ends, send escape key several times to signal termination.
+	for i := 0; i < 5; i++ {
+		if err := exp.Send("\x1b"); err != nil {
+			logging.Error("Failed to send escape key", "error", err)
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	finalOutput := output.String()
+	logging.Info("Command completed successfully", "output_length", len(finalOutput))
+	return finalOutput, nil
 }

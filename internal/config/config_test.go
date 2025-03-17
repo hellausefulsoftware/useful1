@@ -28,9 +28,11 @@ func TestValidateConfig(t *testing.T) {
 				CLI: struct {
 					Command string
 					Args    []string
+					Timeout int
 				}{
 					Command: "cli-command",
 					Args:    []string{"arg1", "arg2"},
+					Timeout: 120,
 				},
 			},
 			expectErr: false,
@@ -53,9 +55,11 @@ func TestValidateConfig(t *testing.T) {
 				CLI: struct {
 					Command string
 					Args    []string
+					Timeout int
 				}{
 					Command: "cli-command",
 					Args:    []string{"arg1", "arg2"},
+					Timeout: 120,
 				},
 			},
 			expectErr: true,
@@ -78,9 +82,11 @@ func TestValidateConfig(t *testing.T) {
 				CLI: struct {
 					Command string
 					Args    []string
+					Timeout int
 				}{
 					Command: "cli-command",
 					Args:    []string{"arg1", "arg2"},
+					Timeout: 120,
 				},
 			},
 			expectErr: true,
@@ -103,9 +109,11 @@ func TestValidateConfig(t *testing.T) {
 				CLI: struct {
 					Command string
 					Args    []string
+					Timeout int
 				}{
 					Command: "",
 					Args:    []string{"arg1", "arg2"},
+					Timeout: 120,
 				},
 			},
 			expectErr: true,

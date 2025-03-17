@@ -1,0 +1,15 @@
+time=2025-03-16T21:40:38.413-07:00 level=INFO msg="Starting useful1" version=1.0.0
+time=2025-03-16T21:40:38.413-07:00 level=INFO msg="Starting monitoring"
+{"status": "starting", "message": "Monitoring started"}
+time=2025-03-16T21:40:38.413-07:00 level=INFO msg="Set poll interval" seconds=60 minutes=1
+time=2025-03-16T21:40:38.413-07:00 level=INFO msg="Monitoring assigned issues only"
+time=2025-03-16T21:40:38.413-07:00 level=INFO msg="Creating new monitor" username=hellauseful1 repo_filter_count=0
+time=2025-03-16T21:40:38.413-07:00 level=INFO msg="Monitoring all accessible repositories"
+time=2025-03-16T21:40:38.413-07:00 level=INFO msg="Running one-time check"
+time=2025-03-16T21:40:38.413-07:00 level=INFO msg="Running one-time check for assigned issues"
+time=2025-03-16T21:40:38.413-07:00 level=INFO msg="Checking for issues assigned to user" username=hellauseful1
+time=2025-03-16T21:40:38.413-07:00 level=INFO msg="Checking all accessible repositories"
+time=2025-03-16T21:40:38.413-07:00 level=INFO msg="Checking for issues assigned to user" username=hellauseful1
+time=2025-03-16T21:40:38.413-07:00 level=INFO msg="Searching for assigned issues" query="assignee:hellauseful1 updated:>2025-03-15T21:40:38-07:00 is:issue is:open"
+time=2025-03-16T21:40:38.780-07:00 level=INFO msg="Found assigned issues" count=1
+time=2025-03-16T21:40:39.186-07:00 level=INFO msg="Processing issue in main execution flow" number=1 owner=hellausefulsoftware repo=testrepo title="Repository is empty"

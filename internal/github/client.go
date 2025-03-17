@@ -713,13 +713,12 @@ func (c *Client) CreateImplementationFile(owner, repo, branchName string, issueN
 	// Create executor to handle CLI command execution
 	executor := cli.NewExecutor(cfg)
 
-	// Set up the arguments - only pass -p for the prompt
-	// The executor will handle adding the command and any config-based args
-	args = []string{"-p", implementationContent}
+	// Set up the arguments - no need for -p flag now
+	args = []string{}
 
-	// Execute the CLI tool using the executor
+	// Execute the CLI tool using the executor with the prompt content
 	var output string
-	output, err = executor.ExecuteWithOutput(args)
+	output, err = executor.ExecuteWithOutput(args, implementationContent)
 	if err != nil {
 		logging.Error("Failed to execute Claude CLI with implementation plan",
 			"error", err,

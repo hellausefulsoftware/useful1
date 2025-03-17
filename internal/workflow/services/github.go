@@ -107,7 +107,6 @@ func (s *GitHubImplementationService) CreateImplementationPromptAndExecute(owner
 			implementationContent = fmt.Sprintf("# Developer Instructions for Issue #%d: %s\n\n",
 				issue.Number, issue.Title)
 			implementationContent += plan
-			implementationContent += "\n\n---\n*Generated with Claude 3.7 Sonnet*"
 			logging.Info("Successfully generated AI implementation plan",
 				"plan_length", len(plan))
 		}
@@ -197,12 +196,11 @@ func (s *GitHubImplementationService) CreateImplementationPromptAndExecute(owner
 	// Create executor to handle CLI command execution
 	executor := cli.NewExecutor(s.config)
 
-	// Set up the arguments - only pass -p for the prompt
-	// The executor will handle adding the command and any config-based args
-	args := []string{"-p", implementationContent}
+	// Set up the arguments - no need for -p flag now
+	args := []string{}
 
-	// Execute the CLI tool using the executor
-	output, err := executor.ExecuteWithOutput(args)
+	// Execute the CLI tool using the executor with the prompt content
+	output, err := executor.ExecuteWithOutput(args, implementationContent)
 	if err != nil {
 		logging.Error("Failed to execute Claude CLI with implementation plan",
 			"error", err,

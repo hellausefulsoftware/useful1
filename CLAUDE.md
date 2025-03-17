@@ -48,6 +48,8 @@
 - Go 1.23.6
 - Key packages: go-github/v45, cobra, viper
 
+If you do not know how to use a dependency use go doc to see the interface documentation
+
 ## File Edit Best Practices
 - Get exact context before editing: Use ripgrep to find the exact string context including whitespace
 - Use multi-line edit blocks: Include at least 3-5 lines before and after the change point

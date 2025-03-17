@@ -414,25 +414,28 @@ Give only the branch name, e.g., "fix-header-overflow" or "add-user-permissions"
 
 // generateImplementationPlan creates a detailed implementation plan using Claude 3.7 Sonnet
 func (a *IssueAnalyzer) generateImplementationPlan(transcript string, issue *models.Issue) (string, error) {
-	prompt := `You are implementing a solution for a GitHub issue. I'll provide the details of the issue, and you need to create the solution.
-
+	prompt := `You are implementing a solution for a GitHub issue. 
+	
+I'll provide the details of the issue, and you need to create the solution.
 ISSUE TRANSCRIPT:
 ${transcript}
 
-DO NOT just describe what you would do - I need you to ACTUALLY EXECUTE these commands right now:
+First, briefly understand what needs to be changed.
 
-1. First, briefly understand what needs to be changed and what specific actions you'll take
-2. Create any necessary files or modify existing files
-3. Run: make lint-all
-4. Run: make test
-5. Summarize what you actually implemented in a short, clear description (1-2 sentences)
-6. IMPORTANT: Execute these EXACT commands (replacing placeholders with actual values):
+Come with a plan for what specific actions someone should take, write instructions as an order such as "run git commit to make the the changes"
+Each step should be concise and written as a direct instruction.
+
+After each Step incorporate into the plan to run "make lint-all" and "make test", then fix any issues that come up. 
+
+IMPORTANT: As part of the plan, at the end write these EXACT commands (replacing placeholders with actual values):
    git add .
    git commit -m "feat: [specific action taken] for issue #${issue_number}"
    git push origin HEAD
 
 The commit message should clearly describe the specific changes made (e.g., "feat: add user authentication flow" instead of just "implement solution").
-You MUST execute the git commands - do not just suggest them or describe what they do. Actually run them now.`
+
+Given all of the above parameters, what is the step by step plan? Do not omit or abbreviate any steps. Be as detailed as possible.
+`
 
 	prompt = strings.Replace(prompt, "${transcript}", transcript, 1)
 	prompt = strings.Replace(prompt, "${issue_number}", fmt.Sprintf("%d", issue.Number), 1)

@@ -24,9 +24,7 @@ type Config struct {
 	CLI struct {
 		Command string
 		Args    []string
-	}
-	Prompt struct {
-		ConfirmationPatterns []PromptPattern
+		Timeout int // in seconds
 	}
 	Budgets struct {
 		IssueResponse float64
@@ -56,10 +54,11 @@ func LoadConfig() (*Config, error) {
 	cfg := &Config{}
 
 	// Set default values
-	cfg.Monitor.PollInterval = 5 // 5 minutes
-	cfg.Budgets.Default = 0.25   // Default budget
+	cfg.Monitor.PollInterval = 1 // 1 minute
+	cfg.Budgets.Default = 5.0    // Default budget of $5
 	cfg.Logging.Level = "info"   // Default log level
 	cfg.VCS.Platform = "github"  // Default VCS platform
+	cfg.CLI.Timeout = 120        // Default timeout of 120 seconds
 
 	// Get config file path using GetConfigPath
 	configFile := GetConfigPath()
@@ -94,13 +93,6 @@ func LoadConfig() (*Config, error) {
 	}
 
 	return cfg, nil
-}
-
-// PromptPattern defines a pattern to match in CLI output and its response criteria
-type PromptPattern struct {
-	Pattern  string
-	Response string
-	Criteria []string
 }
 
 // GetConfigPath returns the path to the config file
@@ -147,6 +139,12 @@ func Load() (*Config, error) {
 	// Unmarshal JSON
 	if err := json.Unmarshal(data, config); err != nil {
 		return nil, fmt.Errorf("unable to decode config: %w", err)
+	}
+
+	// Set longer timeout if log level is debug
+	if strings.ToLower(os.Getenv("LOG_LEVEL")) == "debug" || strings.ToLower(config.Logging.Level) == "debug" {
+		// Increase timeout to 5 minutes (300 seconds) in debug mode
+		config.CLI.Timeout = 300
 	}
 
 	// Decode credentials
@@ -299,22 +297,6 @@ func (c *Configurator) Save() error {
 	}
 	if configToSave.Anthropic.Token != "" {
 		configToSave.Anthropic.Token = encodeCredentials(configToSave.Anthropic.Token)
-	}
-
-	// Set default confirmation patterns if none exist
-	if len(configToSave.Prompt.ConfirmationPatterns) == 0 {
-		configToSave.Prompt.ConfirmationPatterns = []PromptPattern{
-			{
-				Pattern:  "Are you sure you want to proceed?",
-				Response: "y",
-				Criteria: []string{"No test failures detected"},
-			},
-			{
-				Pattern:  "Do you want to create a PR?",
-				Response: "yes",
-				Criteria: []string{"Changes have been reviewed"},
-			},
-		}
 	}
 
 	// Marshal to JSON
