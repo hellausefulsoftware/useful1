@@ -726,9 +726,6 @@ func (c *Client) CreateImplementationFile(owner, repo, branchName string, issueN
 		return fmt.Errorf("failed to execute Claude CLI: %w", err)
 	}
 
-	logging.Info("Successfully executed Claude CLI with implementation plan",
-		"output_length", len(output))
-
 	return nil
 }
 

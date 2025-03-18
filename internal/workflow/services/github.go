@@ -208,12 +208,6 @@ func (s *GitHubImplementationService) CreateImplementationPromptAndExecute(owner
 		return "", fmt.Errorf("failed to execute Claude CLI: %w", err)
 	}
 
-	// Log the Claude CLI output for debugging
-	logging.Info("Successfully executed Claude CLI with implementation plan",
-		"output_length", len(output),
-		"claude_output", output)
-	logging.Debug("Claude CLI full output", "output", output)
-
 	// Check if the git repo has any changes
 	statusCmd := exec.Command("git", "status", "--porcelain")
 	statusOut, err := statusCmd.CombinedOutput()

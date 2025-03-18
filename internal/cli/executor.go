@@ -35,7 +35,7 @@ func (e *Executor) Execute(args []string) error {
 	// Create a context with timeout.
 	timeout := e.config.CLI.Timeout
 	if timeout <= 0 {
-		timeout = 120 // Default 120 seconds if not set or invalid.
+		timeout = 600 // Default 10 minutes (600 seconds) if not set or invalid.
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeout)*time.Second)
 	defer cancel()
@@ -74,8 +74,8 @@ func (e *Executor) Execute(args []string) error {
 
 // ExecuteWithOutput runs the CLI tool and returns output, handling prompts with expect.
 // The function first processes output until both the prompt content and a confirmation (enter)
-// have been sent. It then enters a monitoring phase that polls every 100ms for the text
-// "esc to interrupt". If 5 seconds pass without a new detection, the monitoring phase ends.
+// have been sent. It then enters a monitoring phase that tracks the pattern "esc to interrupt"
+// with ANSI escape codes, and exits when the pattern disappears for a specified time.
 func (e *Executor) ExecuteWithOutput(args []string, promptContent string) (string, error) {
 	logging.Info("Executing CLI tool with output capture", "command", e.config.CLI.Command, "args", args, "prompt_provided", promptContent != "")
 
@@ -91,18 +91,31 @@ func (e *Executor) ExecuteWithOutput(args []string, promptContent string) (strin
 	// Set timeout.
 	timeout := e.config.CLI.Timeout
 	if timeout <= 0 {
-		timeout = 120 // Default 120 seconds.
+		timeout = 600 // Default 10 minutes (600 seconds).
 	}
 	timeoutDuration := time.Duration(timeout) * time.Second
 
 	logging.Info("Using expect to handle interactive prompts", "command", cmdParts[0], "args", cmdArgs, "timeout", timeoutDuration)
 
-	// Spawn command with expect.
+	// Set up environment for better terminal compatibility
 	cmd := exec.Command(cmdParts[0], cmdArgs...)
+	env := os.Environ()
+	customEnv := []string{}
+
+	for _, e := range env {
+		if !strings.HasPrefix(e, "TERM=") {
+			customEnv = append(customEnv, e)
+		}
+	}
+
+	// Use xterm-256color for better compatibility with TUI apps
+	customEnv = append(customEnv, "TERM=xterm-256color", "LINES=24", "COLUMNS=80")
+	cmd.Env = customEnv
+
+	// Spawn command with expect.
 	exp, _, err := expect.SpawnWithArgs(cmd.Args,
 		timeoutDuration,
-		expect.Verbose(true),
-		expect.VerboseWriter(os.Stdout),
+		expect.Verbose(false),
 		expect.PartialMatch(true),
 		expect.CheckDuration(100*time.Millisecond))
 	if err != nil {
@@ -154,6 +167,12 @@ func (e *Executor) ExecuteWithOutput(args []string, promptContent string) (strin
 					logging.Error("Failed to send prompt content", "error", sendErr)
 					return output.String(), sendErr
 				}
+
+				// Small delay before sending enter
+				time.Sleep(300 * time.Millisecond)
+				if sendErr := exp.Send("\r"); sendErr != nil {
+					logging.Error("Failed to send enter key", "error", sendErr)
+				}
 			} else if emptyOutputCount > 10 {
 				logging.Info("Assuming process is running despite empty outputs")
 				promptSent = true
@@ -183,6 +202,12 @@ func (e *Executor) ExecuteWithOutput(args []string, promptContent string) (strin
 						logging.Error("Failed to send prompt content", "error", sendErr)
 						return output.String(), sendErr
 					}
+
+					// Small delay before sending enter
+					time.Sleep(300 * time.Millisecond)
+					if sendErr := exp.Send("\r"); sendErr != nil {
+						logging.Error("Failed to send enter key", "error", sendErr)
+					}
 				}
 				continue
 			}
@@ -200,6 +225,12 @@ func (e *Executor) ExecuteWithOutput(args []string, promptContent string) (strin
 					logging.Error("Failed to send prompt content", "error", err)
 					return output.String(), err
 				}
+
+				// Small delay before sending enter
+				time.Sleep(300 * time.Millisecond)
+				if err := exp.Send("\r"); err != nil {
+					logging.Error("Failed to send enter key", "error", err)
+				}
 				promptSent = true
 			} else {
 				logging.Info("Input box prompt detected again; sending newline")
@@ -212,8 +243,15 @@ func (e *Executor) ExecuteWithOutput(args []string, promptContent string) (strin
 		// Handle yes/no prompt.
 		case ynPattern.MatchString(result):
 			logging.Info("Detected yes/no prompt, answering yes")
-			if err := exp.Send("y\n"); err != nil {
+			if err := exp.Send("y"); err != nil {
 				logging.Error("Failed to send yes response", "error", err)
+				return output.String(), err
+			}
+
+			// Small delay before sending enter
+			time.Sleep(100 * time.Millisecond)
+			if err := exp.Send("\r"); err != nil {
+				logging.Error("Failed to send enter key", "error", err)
 				return output.String(), err
 			}
 		// Handle interactive screen prompts.
@@ -258,6 +296,12 @@ func (e *Executor) ExecuteWithOutput(args []string, promptContent string) (strin
 					logging.Error("Failed to send prompt content", "error", err)
 					return output.String(), err
 				}
+
+				// Small delay before sending enter
+				time.Sleep(300 * time.Millisecond)
+				if err := exp.Send("\r"); err != nil {
+					logging.Error("Failed to send enter key", "error", err)
+				}
 			} else {
 				logging.Info("Prompt detected again; sending newline")
 				if err := exp.Send("\r"); err != nil {
@@ -274,31 +318,127 @@ func (e *Executor) ExecuteWithOutput(args []string, promptContent string) (strin
 
 	// Monitoring phase:
 	logging.Info("Both prompt and enter sent; entering monitoring phase")
+
+	// These patterns capture "esc to interrupt" with potential ANSI color codes anywhere
+	escPatterns := []*regexp.Regexp{
+		// Basic pattern with flexible spacing
+		regexp.MustCompile(`(?i)esc\s*to\s*interrupt`),
+
+		// Pattern with ANSI control sequences between any characters or words
+		// \x1b is the escape character, followed by [ and any number of digits, semicolons, and ending with m
+		regexp.MustCompile(`(?i)e\s*(?:\x1b\[[0-9;]*m)*s\s*(?:\x1b\[[0-9;]*m)*c\s*(?:\x1b\[[0-9;]*m)*\s*t\s*(?:\x1b\[[0-9;]*m)*o\s*(?:\x1b\[[0-9;]*m)*\s*i\s*(?:\x1b\[[0-9;]*m)*n\s*(?:\x1b\[[0-9;]*m)*t\s*(?:\x1b\[[0-9;]*m)*e\s*(?:\x1b\[[0-9;]*m)*r\s*(?:\x1b\[[0-9;]*m)*r\s*(?:\x1b\[[0-9;]*m)*u\s*(?:\x1b\[[0-9;]*m)*p\s*(?:\x1b\[[0-9;]*m)*t`),
+
+		// Simpler version that looks for "esc" with possible control codes followed by "to" and "interrupt"
+		regexp.MustCompile(`(?i)e(?:\x1b\[[0-9;]*m)*s(?:\x1b\[[0-9;]*m)*c(?:\x1b\[[0-9;]*m)*.*?t(?:\x1b\[[0-9;]*m)*o(?:\x1b\[[0-9;]*m)*.*?i(?:\x1b\[[0-9;]*m)*n(?:\x1b\[[0-9;]*m)*t(?:\x1b\[[0-9;]*m)*e(?:\x1b\[[0-9;]*m)*r(?:\x1b\[[0-9;]*m)*r(?:\x1b\[[0-9;]*m)*u(?:\x1b\[[0-9;]*m)*p(?:\x1b\[[0-9;]*m)*t`),
+
+		// More general pattern looking for "esc" and "interrupt" with anything between
+		regexp.MustCompile(`(?i)esc.*?interrupt`),
+
+		// Ultra-flexible pattern that can catch heavily formatted text
+		regexp.MustCompile(`(?i)e.*?s.*?c.*?t.*?o.*?i.*?n.*?t.*?e.*?r.*?r.*?u.*?p.*?t`),
+	}
+
+	// Variables to track pattern presence
 	lastDetection := time.Now()
-	// Poll for "esc to interrupt" every 100ms.
+	patternPresent := false
+	missedDetectionCount := 0
+	monitorStartTime := time.Now()
+
+	// Buffer to check for patterns
+	var monitorBuffer strings.Builder
+	monitorBuffer.WriteString(output.String()) // Start with current output
+
+	// Monitoring loop
 	for {
-		result, _, err := exp.Expect(regexp.MustCompile(`esc to interrupt`), 100*time.Millisecond)
-		// If we detect the string, update lastDetection and log it.
-		if err == nil && result != "" {
-			lastDetection = time.Now()
-			output.WriteString(result)
-			logging.Info("'esc to interrupt' detected; updating last detection time")
+		// Check if we're over maximum monitoring time (10 minutes)
+		if time.Since(monitorStartTime) > 10*time.Minute {
+			logging.Warn("Monitoring phase exceeded maximum duration of 10 minutes")
+			break
 		}
-		/* TODO: this detection is not working reliably, hence the 5 minute timout */
-		// If 5 seconds have passed with no new detection, exit monitoring.
-		if time.Since(lastDetection) >= 300*time.Second {
-			logging.Info("No new 'esc to interrupt' detected in the last 5 minutes; exiting monitoring phase")
+
+		// Get output with short timeout
+		result, _, err := exp.Expect(regexp.MustCompile(`.+`), 500*time.Millisecond)
+
+		// Add any output to both the main output and monitoring buffer
+		if err == nil && result != "" {
+			output.WriteString(result)
+			monitorBuffer.WriteString(result)
+
+			// Every 3 seconds, check for the pattern in the last chunk
+			if time.Since(lastDetection) >= 3*time.Second {
+				bufferStr := monitorBuffer.String()
+				lastChunkSize := 5000
+				if len(bufferStr) < lastChunkSize {
+					lastChunkSize = len(bufferStr)
+				}
+
+				lastChunk := bufferStr[len(bufferStr)-lastChunkSize:]
+				patternFound := false
+
+				// Check all patterns
+				for i, pattern := range escPatterns {
+					if pattern.MatchString(lastChunk) {
+						matched := pattern.FindString(lastChunk)
+						logging.Info("Found escape pattern",
+							"pattern_index", i,
+							"matched_text", matched)
+						patternFound = true
+						patternPresent = true
+						lastDetection = time.Now()
+						missedDetectionCount = 0
+						break
+					}
+				}
+
+				// If no pattern found and we've seen it before, increment miss counter
+				if !patternFound && patternPresent {
+					missedDetectionCount++
+					logging.Info("No escape pattern found in last chunk",
+						"consecutive_misses", missedDetectionCount)
+
+					// If we've missed the pattern 3 times consecutively, assume done
+					if missedDetectionCount >= 3 {
+						logging.Info("Pattern disappeared for 3 consecutive checks; assuming command is complete")
+						break
+					}
+				}
+
+				// If we've never seen the pattern and monitoring for over 90 seconds, exit
+				if !patternPresent && time.Since(monitorStartTime) > 90*time.Second {
+					logging.Info("No pattern detected for 90 seconds; assuming command is complete")
+					break
+				}
+			}
+		}
+
+		// Check if there's been no output for 10 seconds
+		if time.Since(lastDetection) > 10*time.Second && patternPresent {
+			logging.Info("No activity for 10 seconds; exiting monitoring phase")
 			break
 		}
 	}
 
 	// After monitoring ends, send escape key several times to signal termination.
-	for i := 0; i < 5; i++ {
+	logging.Info("Sending escape keys to exit")
+	for i := 0; i < 3; i++ {
 		if err := exp.Send("\x1b"); err != nil {
 			logging.Error("Failed to send escape key", "error", err)
 			break
 		}
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(200 * time.Millisecond)
+	}
+
+	// Try Ctrl+C as fallback
+	logging.Info("Sending Ctrl+C to exit")
+	if err := exp.Send("\x03"); err != nil {
+		logging.Error("Failed to send Ctrl+C", "error", err)
+	}
+	time.Sleep(200 * time.Millisecond)
+
+	// Send 'q' which is common exit key
+	logging.Info("Sending 'q' to exit")
+	if err := exp.Send("q"); err != nil {
+		logging.Error("Failed to send q key", "error", err)
 	}
 
 	finalOutput := output.String()
